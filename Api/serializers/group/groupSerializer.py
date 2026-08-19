@@ -5,7 +5,6 @@ from drf_spectacular.types import OpenApiTypes
 
 from Api.serializers.permission.permissionSerializer import PermissionSerializer
 
-
 class GroupListSerializer(serializers.ModelSerializer):
     """
     Serializer otimizado para listagem de Grupos/Cargos.
@@ -20,17 +19,16 @@ class GroupListSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'permissions', 'userCount', 'permissionCount']
 
     @extend_schema_field(OpenApiTypes.INT)
-    def getUserCount(self, obj) -> int:
+    def get_userCount(self, obj) -> int:
         if hasattr(obj, 'userCount'):
             return obj.userCount
         return obj.user_set.count()
 
     @extend_schema_field(OpenApiTypes.INT)
-    def getPermissionCount(self, obj) -> int:
+    def get_permissionCount(self, obj) -> int:
         if hasattr(obj, 'permissionCount'):
             return obj.permissionCount
         return obj.permissions.count()
-
 
 class GroupUserSummarySerializer(serializers.Serializer):
     """
@@ -41,10 +39,9 @@ class GroupUserSummarySerializer(serializers.Serializer):
     fullName = serializers.SerializerMethodField()
 
     @extend_schema_field(OpenApiTypes.STR)
-    def get_full_name(self, obj) -> str:
+    def get_fullName(self, obj) -> str:
         fullName = f"{getattr(obj, 'first_name', '')} {getattr(obj, 'last_name', '')}".strip()
         return fullName if fullName else getattr(obj, 'username', '')
-
 
 class GroupDetailSerializer(GroupListSerializer):
     """
@@ -56,10 +53,9 @@ class GroupDetailSerializer(GroupListSerializer):
         fields = GroupListSerializer.Meta.fields + ['users']
 
     @extend_schema_field(GroupUserSummarySerializer(many=True))
-    def getUsers(self, obj):
+    def get_users(self, obj):
         usersQs = obj.user_set.all()[:50]  # Limita aos primeiros 50 membros para performance
         return GroupUserSummarySerializer(usersQs, many=True).data
-
 
 class GroupCreateUpdateSerializer(serializers.Serializer):
     """

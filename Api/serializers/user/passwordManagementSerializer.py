@@ -39,7 +39,6 @@ class ChangePasswordSerializer(serializers.Serializer):
 
         return attrs
 
-
 class PasswordResetRequestSerializer(serializers.Serializer):
     """
     Serializer for initiating the password reset flow.
@@ -49,7 +48,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         required=True,
         error_messages={'required': 'Email address is required.'}
     )
-
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """

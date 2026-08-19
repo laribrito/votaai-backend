@@ -3,7 +3,6 @@ from django.contrib.auth.models import Permission
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
 
-
 class PermissionSerializer(serializers.ModelSerializer):
     """
     Serializer para exibição de Permissões (padrão do Django ou customizadas).
@@ -17,14 +16,13 @@ class PermissionSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'codename', 'app_label', 'fullCodename']
 
     @extend_schema_field(OpenApiTypes.STR)
-    def getAppLabel(self, obj) -> str:
+    def get_app_label(self, obj) -> str:
         return obj.content_type.app_label if obj.content_type else ''
 
     @extend_schema_field(OpenApiTypes.STR)
-    def getFullCodename(self, obj) -> str:
+    def get_fullCodename(self, obj) -> str:
         app_label = obj.content_type.app_label if obj.content_type else ''
         return f"{app_label}.{obj.codename}" if app_label else obj.codename
-
 
 class PermissionCreateUpdateSerializer(serializers.Serializer):
     """

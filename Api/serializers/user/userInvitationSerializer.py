@@ -75,7 +75,7 @@ class UserInvitationSerializer(serializers.Serializer):
         default='Ativo'
     )
 
-    def validateEmail(self, value):
+    def validate_email(self, value):
         """
         Custom Validator: Checks for email duplication.
         """
@@ -85,7 +85,7 @@ class UserInvitationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Este e-mail já está cadastrado no sistema.")
         return email
 
-    def validateUsername(self, value):
+    def validate_username(self, value):
         """
         Custom Validator: Checks for username availability.
         """
@@ -94,7 +94,7 @@ class UserInvitationSerializer(serializers.Serializer):
             raise serializers.ValidationError("Este nome de usuário já está em uso. Escolha outro.")
         return value
 
-    def validateRoles(self, value):
+    def validate_roles(self, value):
         """
         Custom Validator: Ensures all submitted Roles actually exist in the database.
         """
@@ -102,7 +102,7 @@ class UserInvitationSerializer(serializers.Serializer):
         existingGroups = list(Group.objects.filter(name__in=value).values_list('name', flat=True))
         invalidRoles = [role for role in value if role not in existingGroups]
 
-        requestUser = self.context.get('requestUser')
+        requestUser = self.context.get('request_user')
         
         if invalidRoles:
             # Original (EN): "The following roles are invalid or do not exist: ..."

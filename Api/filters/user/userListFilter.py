@@ -1,7 +1,6 @@
 import django_filters
 from Domain.models.schemas.moderation.userSchema import User
 
-
 class UserListFilter(django_filters.FilterSet):
 
     search = django_filters.CharFilter(method='filterSearch')
@@ -13,4 +12,4 @@ class UserListFilter(django_filters.FilterSet):
         fields = ['role', 'is_active']
 
     def filterSearch(self, queryset, name, value):
-        return queryset.search_by_term(value)
+        return queryset.searchByTerm(value)

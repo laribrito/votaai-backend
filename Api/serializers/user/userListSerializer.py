@@ -3,7 +3,6 @@ from Domain.models.schemas.moderation.userSchema import User
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
 
-
 class UserListSerializer(serializers.ModelSerializer):
     """
     Serializer optimized for the User List table.
@@ -29,7 +28,7 @@ class UserListSerializer(serializers.ModelSerializer):
         ]
 
     @extend_schema_field(OpenApiTypes.STR)
-    def get_full_name(self, obj) -> str:
+    def get_fullName(self, obj) -> str:
         """
         Concatenates first and last name. Falls back to username if empty.
         """
@@ -37,7 +36,7 @@ class UserListSerializer(serializers.ModelSerializer):
         return fullName if fullName else obj.username
 
     @extend_schema_field(OpenApiTypes.OBJECT) # Typed as Object/Array in Swagger
-    def getRoles(self, obj) -> list[dict[str, str]]:
+    def get_roles(self, obj) -> list[dict[str, str]]:
         """
         Retrieves all group names associated with the user.
         Returns a list of objects (e.g., [{"name": "Administrador"}]).
@@ -61,7 +60,7 @@ class UserListSerializer(serializers.ModelSerializer):
         return sorted([perm.split('.')[-1] for perm in allPerms])
 
     @extend_schema_field(OpenApiTypes.OBJECT)
-    def getStatusControl(self, obj) -> dict:
+    def get_statusControl(self, obj) -> dict:
         """
         Provides a structured status control object tailored for the Frontend Dumb View.
         """

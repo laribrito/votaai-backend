@@ -4,7 +4,6 @@ from Domain.models.schemas.moderation.userSchema import User
 # Project Imports
 from Controllers.querysets.user.userUpdateQueryset import UserUpdateQuerySet
 
-
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
     Base Serializer for user self-updates.
@@ -26,7 +25,6 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         if UserUpdateQuerySet.is_username_taken(value, user.pk):
             raise serializers.ValidationError("This username is already taken.")
         return value
-
 
 class UserManagementSerializer(UserUpdateSerializer):
     """
@@ -67,7 +65,6 @@ class UserManagementSerializer(UserUpdateSerializer):
             raise serializers.ValidationError("Usuários Administradores não podem receber outros cargos.")
 
         return value
-
 
 class UserUpdateResponseSerializer(serializers.Serializer):
     """

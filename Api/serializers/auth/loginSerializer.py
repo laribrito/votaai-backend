@@ -3,7 +3,6 @@ from Domain.models.schemas.moderation.userSchema import User
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
 
-
 class LoginSerializer(serializers.Serializer):
     """
     Validates the login credentials (username and password) received from the client.
@@ -39,7 +38,7 @@ class LoginUserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'fullName', 'roles', 'permissions']
 
     @extend_schema_field(OpenApiTypes.OBJECT)
-    def getRoles(self, obj) -> list[dict[str, str]]:
+    def get_roles(self, obj) -> list[dict[str, str]]:
         """
         Retrieves all group names associated with the user.
         """
@@ -48,7 +47,7 @@ class LoginUserSerializer(serializers.ModelSerializer):
         # para manter compatibilidade com o tipo UserAuth usado no frontend.
         return [{"name": role_name} for role_name in obj.groups.values_list('name', flat=True)]
 
-    def get_full_name(self, obj) -> str:
+    def get_fullName(self, obj) -> str:
         return f"{obj.first_name} {obj.last_name}".strip()
 
     @extend_schema_field({'type': 'array', 'items': {'type': 'string'}})
