@@ -60,8 +60,8 @@ Request → Api (View valida entrada)
 ```
 
 ### Convenção de Nomenclatura dos Models
-- **`XxxSchema`** — O model Django real (tabela no banco). Contém apenas campos e constraints.
-- **`Xxx`** — Proxy model. Adiciona propriedades computadas, validação de negócio e helpers de RBAC.
+- **`XxxProxy`** — Classe base (Mixin). Contém apenas propriedades computadas, validação de negócio e helpers de RBAC.
+- **`Xxx`** — O model Django real (tabela no banco), que herda de `XxxProxy`. Contém campos, relacionamentos e constraints.
 
 ---
 
@@ -121,26 +121,28 @@ Django Admin: `http://localhost:8000/admin/`
 
 ### Adicionando um novo módulo de domínio
 
-**1. Crie o model em `Domain/models/schemas/`**
+**1. Crie o proxy em `Domain/models/proxies/`**
+```python
+# Domain/models/proxies/meumodulo/meu_model_proxy.py
+
+class MeuModelProxy:
+    # Propriedades e métodos de negócio
+    @property
+    def is_active(self):
+        return True
+```
+
+**2. Crie o model em `Domain/models/schemas/`**
 ```python
 # Domain/models/schemas/meumodulo/meu_model.py
 from django.db import models
 from Core.schema_mixins.timestamp_schema_mixin import TimestampSchemaMixin
 from Core.schema_mixins.slug_schema_mixin import SlugSchemaMixin
+from Domain.models.proxies.meumodulo.meu_model_proxy import MeuModelProxy
 
-class MeuModelSchema(TimestampSchemaMixin, SlugSchemaMixin):
+class MeuModel(MeuModelProxy, TimestampSchemaMixin, SlugSchemaMixin):
     nome = models.CharField(max_length=255)
     # ... seus campos
-```
-
-**2. Crie o proxy em `Domain/models/proxies/`**
-```python
-# Domain/models/proxies/meumodulo/meu_model_proxy.py
-from Domain.models.schemas.meumodulo.meu_model import MeuModelSchema
-
-class MeuModel(MeuModelSchema):
-    class Meta:
-        proxy = True
 ```
 
 **3. Crie o queryset em `Controllers/querysets/`**
