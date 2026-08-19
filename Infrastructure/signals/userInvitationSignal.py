@@ -4,7 +4,6 @@ from django.dispatch import receiver
 from Domain.signals.invitationSignals import userInvited
 from Infrastructure.services.emailService import EmailService
 
-
 @receiver(userInvited)
 def sendInvitationEmail(sender, user, uid, token, **kwargs):
     """

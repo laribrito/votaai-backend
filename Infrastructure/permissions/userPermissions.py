@@ -2,7 +2,6 @@ from rest_framework.permissions import BasePermission
 
 from Domain.models import DomainPermissions
 
-
 class CanManageUsers(BasePermission):
     """
     Permission class for user management endpoints.
@@ -23,11 +22,10 @@ class CanManageUsers(BasePermission):
     """
     message = "Access denied. Only users with user management permissions can perform this action."
 
-    def hasPermission(self, request, view) -> bool:  # type: ignore[override]
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
         if not request.user or not request.user.is_authenticated:
             return False
         return request.user.is_superuser or request.user.has_perm(DomainPermissions.FULL_CAN_MANAGE_USERS)
-
 
 class IsOwnerOrAdmin(BasePermission):
     """
@@ -36,10 +34,10 @@ class IsOwnerOrAdmin(BasePermission):
     """
     message = "You do not have permission to modify this profile."
 
-    def hasPermission(self, request, view) -> bool:  # type: ignore[override]
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
         return bool(request.user and request.user.is_authenticated)
 
-    def hasObjectPermission(self, request, view, obj) -> bool:  # type: ignore[override]
+    def has_object_permission(self, request, view, obj) -> bool:  # type: ignore[override]
         isAdmin = request.user.is_superuser
         hasManagementPerm = request.user.has_perm(DomainPermissions.FULL_CAN_MANAGE_USERS)
         isOwner = obj == request.user

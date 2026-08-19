@@ -1,7 +1,6 @@
 from rest_framework.permissions import BasePermission
 from Domain.models import DomainPermissions
 
-
 class CanManageGroups(BasePermission):
     """
     Permission class for group management endpoints.
@@ -16,7 +15,7 @@ class CanManageGroups(BasePermission):
     """
     message = "Access denied. Only users with group management permissions can perform this action."
 
-    def hasPermission(self, request, view) -> bool:  # type: ignore[override]
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
         if not request.user or not request.user.is_authenticated:
             return False
         return (
@@ -24,7 +23,6 @@ class CanManageGroups(BasePermission):
             or request.user.has_perm(DomainPermissions.FULL_CAN_MANAGE_GROUPS)
             or request.user.has_perm(DomainPermissions.FULL_CAN_MANAGE_USERS)
         )
-
 
 class CanManagePermissions(BasePermission):
     """
@@ -39,7 +37,7 @@ class CanManagePermissions(BasePermission):
     """
     message = "Access denied. Only users with permission management capabilities can perform this action."
 
-    def hasPermission(self, request, view) -> bool:  # type: ignore[override]
+    def has_permission(self, request, view) -> bool:  # type: ignore[override]
         if not request.user or not request.user.is_authenticated:
             return False
         return (

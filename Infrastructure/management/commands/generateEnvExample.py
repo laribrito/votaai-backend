@@ -9,7 +9,6 @@ from pathlib import Path
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-
 class Command(BaseCommand):
     help = "Generates a sanitized .env.example file from the local .env file."
 

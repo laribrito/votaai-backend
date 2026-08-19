@@ -188,24 +188,6 @@ docker-compose exec web python manage.py migrate
 
 ---
 
-## 📁 Coleção Bruno
-
-O diretório `Bruno/` contém uma coleção pronta para uso no [Bruno](https://www.usebruno.com/):
-
-```
-Bruno/
-├── Auth/
-│   ├── login.bru
-│   └── me.bru
-├── Users/
-│   ├── list_users.bru
-│   └── invite_user.bru
-└── environments/
-    └── local.bru      ← defina baseUrl e token aqui
-```
-
----
-
 ## 📐 Convenções
 
 - **Commits**: [Conventional Commits](https://www.conventionalcommits.org/)

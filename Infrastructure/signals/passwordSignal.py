@@ -4,7 +4,6 @@ from django.dispatch import receiver
 from Domain.signals.authSignals import passwordResetRequested
 from Infrastructure.services.emailService import EmailService
 
-
 @receiver(passwordResetRequested)
 def sendPasswordResetEmail(sender, user, uid, token, **kwargs):
     """

@@ -14,7 +14,6 @@ from django.core.management.base import BaseCommand
 from Domain.models.schemas.moderation.userSchema import User
 
 
-
 class Command(BaseCommand):
     help = "Seeds a default development superuser."
 

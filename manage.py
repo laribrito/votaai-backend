@@ -3,7 +3,6 @@
 import os
 import sys
 
-
 def main():
     """Run administrative tasks."""
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'setup.settings')
@@ -21,7 +20,6 @@ def main():
         sys.argv[1] = sys.argv[1].replace('-', '_')
 
     execute_from_command_line(sys.argv)
-
 
 if __name__ == '__main__':
     main()

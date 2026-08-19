@@ -102,7 +102,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'setup.wsgi.application'
 
-
 # Banco de Dados
 if 'test' in sys.argv and config('USE_SQLITE_FOR_TESTS', default=True, cast=bool):
     DATABASES = {
@@ -123,7 +122,6 @@ else:
         }
     }
 
-
 # Validação de senha
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -140,7 +138,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internacionalização
 LANGUAGE_CODE = 'pt-br'
 
@@ -149,7 +146,6 @@ TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Arquivos estáticos (CSS, JavaScript, Imagens)
 STATIC_URL = 'static/'
@@ -195,7 +191,6 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@myapp.com')
-
 
 # ==============================================================================
 # INTEGRAÇÃO COM O FRONTEND
