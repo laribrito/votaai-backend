@@ -7,7 +7,6 @@ from drf_spectacular.utils import extend_schema
 from Api.serializers.user.roleListSerializer import RoleListSerializer
 from Controllers.querysets.user.roleQueryset import RoleQuerySet
 
-
 @extend_schema(
     summary="List Available Roles",
     description="Returns selectable roles (Django Groups) for use in invitation forms and user management.",

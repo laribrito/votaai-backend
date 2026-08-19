@@ -11,7 +11,6 @@ from Api.serializers.permission.permissionSerializer import (
 from Controllers.actions.permission.permissionActions import PermissionActions
 from Infrastructure.permissions import CanManagePermissions
 
-
 @extend_schema_view(
     list=extend_schema(
         summary="List Available Permissions",
@@ -64,7 +63,7 @@ class PermissionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Permission.objects.none()
-        return PermissionActions.get_base_queryset()
+        return PermissionActions.getBaseQueryset()
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -75,7 +74,7 @@ class PermissionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        permission = PermissionActions.create_custom_permission(serializer.validated_data)
+        permission = PermissionActions.createCustomPermission(serializer.validated_data)
         responseSerializer = PermissionSerializer(permission)
         return Response(responseSerializer.data, status=status.HTTP_201_CREATED)
 
@@ -86,11 +85,11 @@ class PermissionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
-        updatedPermission = PermissionActions.update_custom_permission(permission, serializer.validated_data)
+        updatedPermission = PermissionActions.updateCustomPermission(permission, serializer.validated_data)
         responseSerializer = PermissionSerializer(updatedPermission)
         return Response(responseSerializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
         permission = self.get_object()
-        PermissionActions.delete_custom_permission(permission)
+        PermissionActions.deleteCustomPermission(permission)
         return Response(status=status.HTTP_204_NO_CONTENT)

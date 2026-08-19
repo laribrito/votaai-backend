@@ -19,7 +19,6 @@ from Api.views.user.roleListView import RoleListView
 from Api.views.group.groupView import GroupViewSet
 from Api.views.permission.permissionView import PermissionViewSet
 
-
 # ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
 # ---------------------------------------------------------------------------

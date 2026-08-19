@@ -38,7 +38,7 @@ class UserProfileUpdateView(UpdateAPIView):
     serializer_class = UserUpdateSerializer
 
     def get_queryset(self):
-        return UserUpdateQuerySet.get_base_queryset()
+        return UserUpdateQuerySet.getBaseQueryset()
 
     def get_object(self):
         return self.request.user

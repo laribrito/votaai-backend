@@ -45,7 +45,6 @@ class AuthViewSet(viewsets.ViewSet):
 
         return Response(responseSerializer.data, status=status.HTTP_200_OK)
 
-
 @extend_schema(
     summary="Logout (Current Device)",
     description="Invalidates the token used in the Authorization header.",
@@ -67,7 +66,6 @@ class LogoutView(KnoxLogoutView):
             status=status.HTTP_200_OK
         )
 
-
 @extend_schema(
     summary="Logout All Devices",
     description="Invalidates ALL tokens for this user (Security reset).",
@@ -88,7 +86,6 @@ class LogoutAllView(KnoxLogoutAllView):
             {"detail": "Successfully logged out from all devices."},
             status=status.HTTP_200_OK
         )
-
 
 @extend_schema(
     summary="Get Current User",

@@ -44,7 +44,7 @@ class UserManagementUpdateView(UpdateAPIView):
     serializer_class = UserManagementSerializer
 
     def get_queryset(self):
-        return UserUpdateQuerySet.get_base_queryset()
+        return UserUpdateQuerySet.getBaseQueryset()
 
     def patch(self, request, *args, **kwargs):
         userInstance = self.get_object()

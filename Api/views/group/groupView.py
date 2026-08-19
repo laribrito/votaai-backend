@@ -12,7 +12,6 @@ from Api.serializers.group.groupSerializer import (
 from Controllers.actions.group.groupActions import GroupActions
 from Infrastructure.permissions import CanManageGroups
 
-
 @extend_schema_view(
     list=extend_schema(
         summary="List System Groups/Roles",
@@ -65,7 +64,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Group.objects.none()
-        return GroupActions.get_base_queryset()
+        return GroupActions.getBaseQueryset()
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -78,7 +77,7 @@ class GroupViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        group = GroupActions.create_group(serializer.validated_data)
+        group = GroupActions.createGroup(serializer.validated_data)
         responseSerializer = GroupDetailSerializer(group)
         return Response(responseSerializer.data, status=status.HTTP_201_CREATED)
 
@@ -89,11 +88,11 @@ class GroupViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
-        updatedGroup = GroupActions.update_group(group, serializer.validated_data)
+        updatedGroup = GroupActions.updateGroup(group, serializer.validated_data)
         responseSerializer = GroupDetailSerializer(updatedGroup)
         return Response(responseSerializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
         group = self.get_object()
-        GroupActions.delete_group(group)
+        GroupActions.deleteGroup(group)
         return Response(status=status.HTTP_204_NO_CONTENT)

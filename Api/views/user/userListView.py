@@ -12,7 +12,6 @@ from Api.pagination.userListPagination import UserListPagination
 from Controllers.actions.user.userListActions import UserListAction
 from Infrastructure.permissions import CanManageUsers
 
-
 @extend_schema(
     summary="List System Users",
     description="Retrieves a list of users. Restricted to **Administrador** and users with management permissions.",
@@ -34,14 +33,14 @@ class UserListViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     pagination_class = UserListPagination
     filter_backends = [DjangoFilterBackend]
-    filtersetClass = UserListFilter
+    filterset_class = UserListFilter
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
         
         # Delega a construção do QuerySet para a camada de Action/Controller
-        return UserListAction.get_base_queryset()
+        return UserListAction.getBaseQueryset()
 
     @extend_schema(
         summary="User Statistics",

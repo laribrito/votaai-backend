@@ -7,7 +7,6 @@ from Api.serializers.user.userInvitationSerializer import UserInvitationSerializ
 from Infrastructure.permissions import CanManageUsers
 from Controllers.actions.user.userInvitationActions import UserInvitationActions
 
-
 class UserInvitationViewSet(viewsets.ViewSet):
     """
     API Interface: User Invitation.
@@ -48,13 +47,13 @@ class UserInvitationViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Trigger domain logic via Action layer
-        # Original: result = UserInvitationActions.invite_user(serializer.validated_data)
+        # Original: result = UserInvitationActions.inviteUser(serializer.validated_data)
         # [Integração Backend Real - Propagação de Erro de SMTP]
         # Agora capturamos exceções do envio de e-mail (SMTP) que antes eram engolidas.
         # Se o e-mail falhar, retornamos um erro formatado por campo para que o
         # formulário do frontend exiba a mensagem diretamente no campo de e-mail.
         try:
-            result = UserInvitationActions.invite_user(serializer.validated_data, acting_user=request.user)
+            result = UserInvitationActions.inviteUser(serializer.validated_data, acting_user=request.user)
         except Exception as e:
             errorMessage = str(e)
             if 'SMTP' in errorMessage or 'Connection refused' in errorMessage or 'getaddrinfo' in errorMessage:
