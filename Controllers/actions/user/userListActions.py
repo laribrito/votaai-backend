@@ -1,7 +1,6 @@
 from Domain.models.schemas.moderation.userSchema import User
 from Controllers.querysets.user.userListQueryset import UserListQuerySet
 
-
 class UserListAction:
     """
     Action responsável por orquestrar a listagem de usuários.
@@ -13,7 +12,7 @@ class UserListAction:
         Retorna a query base já com as otimizações e ordenação padrão aplicadas.
         """
         # Instancia o QuerySet passando o model para não quebrar a arquitetura
-        return UserListQuerySet(model=User).with_roles().default_list_order()
+        return UserListQuerySet(model=User).withRoles().defaultListOrder()
 
     @staticmethod
     def getStatsCounts():

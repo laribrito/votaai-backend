@@ -11,8 +11,6 @@ from Domain.models.schemas.moderation.userSchema import User
 from Domain.signals.invitationSignals import userInvited
 from Controllers.querysets.user.userUpdateQueryset import UserUpdateQuerySet
 
-
-
 class UserInvitationActions:
     """Orquestra o fluxo de Convite de Usuário."""
 
@@ -31,10 +29,10 @@ class UserInvitationActions:
 
         with transaction.atomic():
             # 1. Validação (Exclusividade)
-            if UserUpdateQuerySet.is_username_taken(username):
+            if UserUpdateQuerySet.isUsernameTaken(username):
                 raise ValidationError({"username": "Este nome de usuário já está em uso."})
 
-            if UserUpdateQuerySet.is_email_taken(email):
+            if UserUpdateQuerySet.isEmailTaken(email):
                 raise ValidationError({"email": "Este e-mail já está cadastrado."})
 
             # 2. Cria Usuário com Status Dinâmico
@@ -48,7 +46,7 @@ class UserInvitationActions:
 
             # 3. Atribui Múltiplos Cargos
             try:
-                groups = UserUpdateQuerySet.get_groups_by_names(roles)
+                groups = UserUpdateQuerySet.getGroupsByNames(roles)
                 user.groups.set(groups)
             except Exception:
                 user.delete()

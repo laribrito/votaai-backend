@@ -2,7 +2,6 @@ from Domain.models.schemas.moderation.userSchema import User
 from django.contrib.auth.models import Group
 from django.shortcuts import get_object_or_404
 
-
 class UserUpdateQuerySet:
     """
     Camada dedicada para operações de atualização de usuário.

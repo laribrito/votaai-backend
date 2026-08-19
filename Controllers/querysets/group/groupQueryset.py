@@ -1,7 +1,6 @@
 from django.db import models
 from django.db.models import Count
 
-
 class GroupQuerySet(models.QuerySet):
     """
     QuerySet personalizado para a gestão dos Cargos/Grupos (django.contrib.auth.models.Group).

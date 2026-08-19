@@ -1,7 +1,6 @@
 from Domain.models.schemas.moderation.userSchema import User
 from django.shortcuts import get_object_or_404
 
-
 class UserStatusToggleAction:
     """
     Business logic orchestrator for toggling user status.

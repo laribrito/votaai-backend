@@ -6,7 +6,6 @@ from Controllers.querysets.group.groupQueryset import GroupQuerySet
 from Controllers.querysets.permission.permissionQueryset import PermissionQuerySet
 from Domain.models import GroupRoles
 
-
 class GroupActions:
     """
     Action/Controller responsável por orquestrar regras de negócio da gestão de Cargos/Grupos (Groups).
@@ -18,7 +17,7 @@ class GroupActions:
         """
         Retorna o QuerySet base otimizado de grupos.
         """
-        return GroupQuerySet(model=Group).with_details().default_list_order()
+        return GroupQuerySet(model=Group).withDetails().defaultListOrder()
 
     @staticmethod
     def createGroup(validated_data: dict) -> Group:
@@ -34,7 +33,7 @@ class GroupActions:
         with transaction.atomic():
             group = Group.objects.create(name=name)
             if permissionIdentifiers:
-                perms = PermissionQuerySet(model=Permission).by_codenames_or_ids(permissionIdentifiers)
+                perms = PermissionQuerySet(model=Permission).byCodenamesOrIds(permissionIdentifiers)
                 group.permissions.set(perms)
             return group
 
@@ -55,7 +54,7 @@ class GroupActions:
                 group.save()
 
             if permissionIdentifiers is not None:
-                perms = PermissionQuerySet(model=Permission).by_codenames_or_ids(permissionIdentifiers)
+                perms = PermissionQuerySet(model=Permission).byCodenamesOrIds(permissionIdentifiers)
                 group.permissions.set(perms)
 
             return group

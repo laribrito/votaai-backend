@@ -15,9 +15,9 @@ class PermissionActions:
     @staticmethod
     def getBaseQueryset():
         """
-        Retorna todas as permissões cadastradas no sistema ordenadas e com contentType otimizado.
+        Retorna todas as permissões cadastradas no sistema ordenadas e com content_type otimizado.
         """
-        return PermissionQuerySet(model=Permission).with_content_type().default_list_order()
+        return PermissionQuerySet(model=Permission).withContentType().defaultListOrder()
 
     @staticmethod
     def createCustomPermission(validated_data: dict) -> Permission:
@@ -36,14 +36,14 @@ class PermissionActions:
             if not ct:
                 ct = ContentType.objects.get_for_model(User)
 
-        if Permission.objects.filter(codename=codename, contentType=ct).exists():
+        if Permission.objects.filter(codename=codename, content_type=ct).exists():
             raise ValidationError({"codename": f"A permission with codename '{codename}' already exists in app '{ct.app_label}'."})
 
         with transaction.atomic():
             perm = Permission.objects.create(
                 codename=codename,
                 name=name,
-                contentType=ct
+                content_type=ct
             )
             return perm
 
@@ -58,7 +58,7 @@ class PermissionActions:
         with transaction.atomic():
             if codename is not None:
                 cleanCodename = codename.strip().lower()
-                if Permission.objects.filter(codename=cleanCodename, contentType=permission.contentType).exclude(id=permission.id).exists():
+                if Permission.objects.filter(codename=cleanCodename, content_type=permission.content_type).exclude(id=permission.id).exists():
                     raise ValidationError({"codename": f"A permission with codename '{cleanCodename}' already exists."})
                 permission.codename = cleanCodename
 

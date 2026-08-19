@@ -1,6 +1,5 @@
 from django.db import models
 
-
 class PermissionQuerySet(models.QuerySet):
     """
     QuerySet personalizado para a gestão de Permissões (django.contrib.auth.models.Permission).

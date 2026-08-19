@@ -26,7 +26,7 @@ class UserUpdateAction:
 
             # 3. Handle Roles (Groups) Update logic (Admin Only)
             if allow_role_update and roleNames is not None:
-                groups = UserUpdateQuerySet.get_groups_by_names(roleNames)
+                groups = UserUpdateQuerySet.getGroupsByNames(roleNames)
                 if groups:
                     user_instance.groups.set(groups)
 
@@ -34,7 +34,7 @@ class UserUpdateAction:
             if allow_role_update and permissionIdentifiers is not None:
                 from Controllers.querysets.permission.permission_queryset import PermissionQuerySet
                 from django.contrib.auth.models import Permission
-                perms = PermissionQuerySet(model=Permission).by_codenames_or_ids(permissionIdentifiers)
+                perms = PermissionQuerySet(model=Permission).byCodenamesOrIds(permissionIdentifiers)
                 user_instance.user_permissions.set(perms)
 
             return user_instance

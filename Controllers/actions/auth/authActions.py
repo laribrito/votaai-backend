@@ -34,7 +34,7 @@ class AuthActions:
             raise PermissionDenied("This account is deactivated. Please contact the administrator.")
 
         # 3. Generate Token via Domain Service
-        token = AuthService.generate_token_for_user(user)
+        token = AuthService.generateTokenForUser(user)
 
         # Return raw objects. Separation of Concerns: Actions don't worry about JSON structure.
         return {
