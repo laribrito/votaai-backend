@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Python e Ambiente Virtual
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+ENV/
+env/
+build/
+dist/
+*.egg-info/
+
+# Banco de Dados (Postgres)
+# Jamais envie seus dados locais para a imagem do Docker
+postgres_data/
+
+# Logs e arquivos temporários
+*.log
+.tmp/
+.temp/
+
+# IDEs (VS Code, PyCharm)
+.vscode/
+.idea/
+
+# Arquivos de ambiente e segredos
+.env
+*.swp
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

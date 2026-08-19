@@ -1,0 +1,42 @@
+services:
+  # Serviço do Banco de Dados PostgreSQL 18.1
+  db:
+    image: postgres:18.1
+    container_name: ${CONTAINER_PREFIX:-django}_db
+    environment:
+      - POSTGRES_DB=${DB_NAME:-django_db}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      # Padrão: Named volume (ideal para desenvolvimento local e Docker universal)
+      - postgres_data:/var/lib/postgresql/data
+      # Produção (Dokploy): Descomente abaixo para bind mount persistente fora da pasta do projeto
+      # - ../files/postgres:/var/lib/postgresql/data
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+
+  # Serviço do seu Back-end Django (Python 3.13)
+  web:
+    build: .
+    container_name: ${CONTAINER_PREFIX:-django}_api
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ".:/app"
+      # Padrão: Named volume para uploads de mídia
+      - media_data:/media
+      # Produção (Dokploy): Descomente abaixo para bind mount persistente fora da pasta do projeto
+      # - ../files/media:/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+# Declaração dos volumes nomeados
+volumes:
+  postgres_data:
+  media_data:
+
