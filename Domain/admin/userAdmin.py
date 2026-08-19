@@ -4,7 +4,6 @@ from django.utils.translation import gettext_lazy as _
 
 from Domain.models import User
 
-
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
     """

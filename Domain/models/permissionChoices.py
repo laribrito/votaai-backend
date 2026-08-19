@@ -1,6 +1,5 @@
 from Domain.apps import DomainConfig
 
-
 class PermissionMeta(type):
     """
     Metaclass that automatically generates prefixed permission strings (FULL_*)
@@ -13,7 +12,6 @@ class PermissionMeta(type):
             if isinstance(value, str) and not key.startswith('_') and key != 'PREFIX' and not key.startswith('FULL_'):
                 namespace[f'FULL_{key}'] = f'{prefix}.{value}'
         return super().__new__(mcs, name, bases, namespace)
-
 
 class DomainPermissions(metaclass=PermissionMeta):
     """

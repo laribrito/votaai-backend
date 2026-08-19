@@ -6,7 +6,6 @@ from Domain.models.schemas.moderation.userSchema import User
 
 from Domain.models import GroupRoles, DomainPermissions
 
-
 @receiver(post_migrate)
 def createDefaultGroupsAndPermissions(sender, **kwargs):
     """

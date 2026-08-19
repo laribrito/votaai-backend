@@ -3,7 +3,6 @@ from django.dispatch import receiver
 from Domain.models.schemas.moderation.userSchema import User
 from knox.models import AuthToken
 
-
 @receiver(post_save, sender=User)
 def revokeKnoxTokensOnUserDeactivation(sender, instance, **kwargs):
     """
