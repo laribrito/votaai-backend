@@ -40,8 +40,8 @@ fi
 
 # Rodar o comando de seed de desenvolvimento se a variável ENABLE_SEED for "True"
 if [ "$ENABLE_SEED" = "True" ]; then
-    echo "Executando seed inicial do banco de dados (seed_dev)..."
-    python manage.py seed_dev
+    echo "Executando seed inicial do banco de dados (seedDev)..."
+    python manage.py seedDev
 fi
 
 # Passar o comando padrão do Dockerfile ou docker-compose (ex: gunicorn)
