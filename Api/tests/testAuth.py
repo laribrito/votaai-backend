@@ -20,7 +20,6 @@ from rest_framework.test import APITestCase
 from knox.models import AuthToken
 
 
-
 class AuthTests(APITestCase):
     """Tests for the authentication endpoints."""
 

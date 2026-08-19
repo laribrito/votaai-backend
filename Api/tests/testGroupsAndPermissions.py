@@ -14,7 +14,6 @@ from knox.models import AuthToken
 from Domain.models import GroupRoles, DomainPermissions
 
 
-
 class GroupViewSetTests(APITestCase):
     """Tests for the Group Management endpoints (/groups/)."""
 
@@ -123,7 +122,6 @@ class GroupViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(Group.objects.filter(pk=self.admin_group.pk).exists())
 
-
 class PermissionViewSetTests(APITestCase):
     """Tests for the Custom Permission Management endpoints (/permissions/)."""
 
@@ -144,7 +142,7 @@ class PermissionViewSetTests(APITestCase):
         # Check standard fields exist
         firstItem = response.data[0]
         self.assertIn('codename', firstItem)
-        self.assertIn('full_codename', firstItem)
+        self.assertIn('fullCodename', firstItem)
         self.assertIn('app_label', firstItem)
 
     def testCreateCustomPermission(self):
@@ -158,7 +156,7 @@ class PermissionViewSetTests(APITestCase):
         response = self.client.post(reverse('permission-list'), payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['codename'], 'can_moderate_comments')
-        self.assertEqual(response.data['full_codename'], 'Domain.can_moderate_comments')
+        self.assertEqual(response.data['fullCodename'], 'Domain.can_moderate_comments')
 
         # Verify in DB
         self.assertTrue(Permission.objects.filter(codename='can_moderate_comments').exists())
@@ -171,7 +169,7 @@ class PermissionViewSetTests(APITestCase):
         customPerm = Permission.objects.create(
             codename='temporary_custom_perm',
             name='Temporary custom permission',
-            contentType=Permission.objects.first().contentType
+            content_type=Permission.objects.first().content_type
         )
         url = reverse('permission-detail', kwargs={'pk': customPerm.pk})
         response = self.client.delete(url)
