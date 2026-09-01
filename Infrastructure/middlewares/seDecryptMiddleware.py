@@ -16,26 +16,45 @@ class SEDecryptMiddleware(MiddlewareMixin):
     3. Criptografa os dados de retorno (response) usando a chave pública do cliente.
     """
 
+    # Rotas de infraestrutura e documentação que não passam por criptografia de hardware
+    EXEMPT_ROUTES = (
+        '/admin',
+        '/api/docs',
+        '/api/schema',
+        '/api/redoc',
+        '/static',
+        '/media',
+    )
+
     # Prefixos de rotas para Desktop usando a chave 1
     DESKTOP_ROUTES = (
-        '/api/admin/pre-cadastro', # pre cadastro do usuário admin
+        '/api/admin',              # pré-cadastro do admin
         '/api/election/create',    # cadastrar eleição
         '/api/election/start',     # iniciar eleição
         '/api/election/list',      # listar eleições
         '/api/election/close',     # Fechar eleição
         '/api/election/tally',     # apurar eleição
         '/api/ping-desktop',       # Rota de teste
+        '/api/auth',               # autenticação desktop
+        '/api/users',              # gerenciamento de usuários
+        '/api/roles',              # listagem de roles
+        '/api/groups',             # grupos
+        '/api/permissions',        # permissões
+        '/api/password',           # reset/gestão de senha
     )
 
     # Prefixos de rotas para Mobile usando a chave 2
     MOBILE_ROUTES = (
-        '/api/vote/request',       # solicitação de voto
-        '/api/vote/submit',        # votar
+        '/api/vote',               # solicitação de voto e votar
         '/api/election/track',     # acompanhar eleição
     )
 
     def process_request(self, request):
         path = request.path
+
+        # Rotas isentas passam direto
+        if path.startswith(self.EXEMPT_ROUTES):
+            return None
 
         # Determina qual dispositivo e chave usar com base na rota
         key_name = None
@@ -47,9 +66,11 @@ class SEDecryptMiddleware(MiddlewareMixin):
             key_name = 'VotaAI_SecureKey_2'
             device_type = 'mobile'
 
-        # Se a rota não for mapeada para criptografia de hardware, segue o fluxo normal
-        if not key_name:
-            return None
+        # Todas as rotas da aplicação precisam pertencer a um dispositivo
+        if not key_name or not device_type:
+            return JsonResponse({
+                'error': f'Rota {path} não mapeada para nenhum dispositivo (Desktop ou Mobile). Acesso restrito.'
+            }, status=400)
 
         # Marca no request o tipo de dispositivo para uso no process_response
         request._device_type = device_type
@@ -132,17 +153,24 @@ class SEDecryptMiddleware(MiddlewareMixin):
         Criptografa o corpo da resposta antes de enviá-la de volta ao cliente,
         usando a chave pública do Desktop/Mobile registrada.
         """
-        device_type = getattr(request, '_device_type', None)
+        path = request.path
 
+        # Rotas isentas (admin, docs, static) não são criptografadas
+        if path.startswith(self.EXEMPT_ROUTES):
+            return response
+
+        device_type = getattr(request, '_device_type', None)
         if not device_type:
-            path = request.path
             if path.startswith(self.DESKTOP_ROUTES):
                 device_type = 'desktop'
             elif path.startswith(self.MOBILE_ROUTES):
                 device_type = 'mobile'
 
+        # Se não conseguir inferir o dispositivo para qualquer rota da API, retorna erro
         if not device_type:
-            return response
+            return JsonResponse({
+                'error': f'Não foi possível inferir o tipo de dispositivo (desktop/mobile) para a rota {path}.'
+            }, status=400)
 
         # Se não há conteúdo ou se a resposta for streaming, mantém inalterada
         if getattr(response, 'streaming', False) or not response.content:
@@ -151,8 +179,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
         try:
             client_pub_key = SECryptoService.get_client_public_key(device_type)
             if not client_pub_key:
-                # Se ainda não temos a chave pública do cliente, devolve em claro
-                return response
+                return JsonResponse({
+                    'error': f'Chave pública do cliente ({device_type}) não encontrada. Envie sua chave pública no campo "client_public_key".'
+                }, status=400)
 
             # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA
             encrypted_data = SECryptoService.encrypt_response_hybrid(client_pub_key, response.content)
@@ -164,5 +193,6 @@ class SEDecryptMiddleware(MiddlewareMixin):
 
         except Exception as e:
             logger.error(f"Erro ao criptografar resposta para {device_type}: {e}")
+            return JsonResponse({'error': f'Erro ao processar criptografia de resposta: {str(e)}'}, status=500)
 
         return response
