@@ -54,14 +54,6 @@ class SEDecryptMiddleware(MiddlewareMixin):
         # Marca no request o tipo de dispositivo para uso no process_response
         request._device_type = device_type
 
-        # Verifica se o cliente enviou chave pública no Header HTTP
-        header_client_key = request.META.get('HTTP_X_CLIENT_PUBLIC_KEY')
-        if header_client_key and device_type:
-            try:
-                SECryptoService.save_client_public_key(device_type, header_client_key)
-            except Exception as e:
-                logger.warning(f"Não foi possível salvar chave pública enviada no header: {e}")
-
         # Apenas requisições que enviam dados (POST, PUT, PATCH) são criptografadas no body
         if request.method not in ['POST', 'PUT', 'PATCH']:
             return None
