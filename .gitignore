@@ -220,3 +220,4 @@ media/*
 !media/layouts/
 !media/layouts/**
 se_keys_info.json
+*_public_key.txt

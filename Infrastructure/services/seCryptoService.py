@@ -1,6 +1,13 @@
 import ctypes
 from ctypes import wintypes
+import os
+import struct
 import base64
+from pathlib import Path
+from django.conf import settings
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives import serialization
 
 # Carrega a DLL nativa do Windows CNG (Cryptography Next Generation)
 ncrypt = ctypes.windll.ncrypt
@@ -79,3 +86,86 @@ class SECryptoService:
                 ncrypt.NCryptFreeObject(hKey)
             if hProv:
                 ncrypt.NCryptFreeObject(hProv)
+
+    @classmethod
+    def _get_key_file_path(cls, device_type: str = 'desktop') -> Path:
+        base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
+        return Path(base_dir) / f"{device_type}_public_key.txt"
+
+    @classmethod
+    def save_client_public_key(cls, device_type: str, key_data: str) -> None:
+        """
+        Salva a chave pública do cliente em arquivo de texto.
+        """
+        file_path = cls._get_key_file_path(device_type)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(key_data.strip())
+
+    @classmethod
+    def load_rsa_public_key(cls, key_data: str | bytes):
+        """
+        Carrega chave pública RSA suportando PEM, DER (Base64) e BCRYPT_RSAKEY_BLOB (CNG).
+        """
+        if isinstance(key_data, str):
+            key_data_str = key_data.strip()
+            if key_data_str.startswith('-----BEGIN'):
+                return serialization.load_pem_public_key(key_data_str.encode('utf-8'))
+            key_bytes = base64.b64decode(key_data_str)
+        else:
+            key_bytes = key_data
+
+        # Se for formato BCRYPT_RSAKEY_BLOB da Microsoft (começa com RSA1)
+        if key_bytes.startswith(b'RSA1'):
+            magic, bitlen, cbpubexp, cbmodulus, cbprime1, cbprime2 = struct.unpack('<IIIIII', key_bytes[:24])
+            offset = 24
+            exp_bytes = key_bytes[offset:offset+cbpubexp]
+            offset += cbpubexp
+            mod_bytes = key_bytes[offset:offset+cbmodulus]
+            e = int.from_bytes(exp_bytes, byteorder='big')
+            n = int.from_bytes(mod_bytes, byteorder='big')
+            return rsa.RSAPublicNumbers(e, n).public_key()
+
+        # Tenta DER padrão
+        return serialization.load_der_public_key(key_bytes)
+
+    @classmethod
+    def get_client_public_key(cls, device_type: str = 'desktop'):
+        """
+        Lê e faz o parse da chave pública do cliente salva no arquivo txt.
+        Retorna None se o arquivo não existir.
+        """
+        file_path = cls._get_key_file_path(device_type)
+        if not file_path.exists():
+            return None
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+        if not content:
+            return None
+        return cls.load_rsa_public_key(content)
+
+    @classmethod
+    def encrypt_response_hybrid(cls, public_key, data_bytes: bytes) -> dict:
+        """
+        Criptografa bytes de resposta com AES-GCM (32 bytes)
+        e cifra a chave AES com a chave pública RSA do cliente.
+        """
+        aes_key = os.urandom(32)
+        iv = os.urandom(12)
+        aesgcm = AESGCM(aes_key)
+
+        encrypted_data = aesgcm.encrypt(iv, data_bytes, None)
+        tag_length = 16
+        ciphertext = encrypted_data[:-tag_length]
+        tag = encrypted_data[-tag_length:]
+
+        encrypted_aes_key = public_key.encrypt(
+            aes_key,
+            padding.PKCS1v15()
+        )
+
+        return {
+            "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
+            "encrypted_aes_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
+            "iv": base64.b64encode(iv).decode('utf-8'),
+            "tag": base64.b64encode(tag).decode('utf-8')
+        }
