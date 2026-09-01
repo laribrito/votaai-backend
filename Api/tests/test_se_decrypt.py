@@ -50,9 +50,10 @@ class SEDecryptMiddlewareTests(APITestCase):
         if os.path.exists(self.client_key_file):
             os.remove(self.client_key_file)
 
-    def test_ping_desktop_without_client_key_returns_plaintext_response(self):
+    def test_ping_desktop_without_client_key_returns_400_error(self):
         """
-        Quando o cliente NÃO envia sua chave pública, a resposta é devolvida em claro.
+        Quando o cliente NÃO envia sua chave pública (e não há chave salva),
+        a API retorna erro 400 exigindo a chave pública para criptografar a resposta.
         """
         original_payload = {"mensagem_secreta": "Teste sem chave do cliente", "id_teste": 100}
         json_payload_bytes = json.dumps(original_payload).encode('utf-8')
@@ -78,11 +79,9 @@ class SEDecryptMiddlewareTests(APITestCase):
         }
         
         response = self.client.post(self.url, data=body, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         response_data = response.json()
-        self.assertIn('data_recebida', response_data)
-        self.assertEqual(response_data['data_recebida']['id_teste'], 100)
+        self.assertIn('error', response_data)
 
     def test_full_roundtrip_with_client_public_key_and_encrypted_response(self):
         """
