@@ -18,6 +18,7 @@ from Api.views.user.userListView import UserListViewSet
 from Api.views.user.roleListView import RoleListView
 from Api.views.group.groupView import GroupViewSet
 from Api.views.permission.permissionView import PermissionViewSet
+from Api.views.ping.pingDesktopView import PingDesktopView
 
 # ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
@@ -44,6 +45,9 @@ urlpatterns = [
     path('users/<int:pk>/management-update/', UserManagementUpdateView.as_view(), name='user-management-update'),
     path('users/<int:pk>/toggle-status/', UserStatusToggleView.as_view(), name='user-toggle-status'),
     path('roles/', RoleListView.as_view(), name='role-list'),
+
+    # --- Testing ---
+    path('ping-desktop/', PingDesktopView.as_view(), name='ping-desktop'),
 
     # --- ViewSets ---
     path('', include(router.urls)),

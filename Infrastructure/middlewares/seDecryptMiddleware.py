@@ -23,6 +23,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/election/list',      # listar eleições
         '/api/election/close',     # Fechar eleição
         '/api/election/tally',     # apurar eleição
+        '/api/ping-desktop',       # Rota de teste
     )
 
     # Prefixos de rotas para Mobile usando a chave 2
