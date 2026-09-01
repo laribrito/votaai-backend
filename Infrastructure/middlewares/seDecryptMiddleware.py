@@ -87,6 +87,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 body_data = json.loads(request.body)
                 encrypted_payload = body_data.get('encrypted_payload')
                 encrypted_aes_key = body_data.get('encrypted_aes_key')
+                iv = body_data.get('iv')
+                tag = body_data.get('tag')
                 client_public_key = body_data.get('client_public_key')
 
                 # Se a chave pública do cliente veio dentro do envelope JSON da requisição, salva
@@ -99,33 +101,24 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 if not encrypted_payload:
                     return JsonResponse({'error': 'Payload criptografado não encontrado. Envie no campo "encrypted_payload".'}, status=400)
 
-                if encrypted_aes_key:
-                    # MODO HÍBRIDO (AES-GCM + RSA)
-                    iv = body_data.get('iv')
-                    tag = body_data.get('tag')
-                    if not iv or not tag:
-                        return JsonResponse({'error': 'Faltam campos "iv" e "tag" para criptografia AES-GCM.'}, status=400)
-                    
-                    # 1. Descriptografa a chave AES usando o hardware TPM
-                    aes_key_bytes = SECryptoService.decrypt_with_tpm(key_name, encrypted_aes_key)
-                    
-                    # AESGCM pede chave de 16, 24 ou 32 bytes.
-                    aesgcm = AESGCM(aes_key_bytes[:32]) # Pega os primeiros 32 bytes
-                    
-                    iv_bytes = base64.b64decode(iv)
-                    tag_bytes = base64.b64decode(tag)
-                    payload_bytes = base64.b64decode(encrypted_payload)
-                    
-                    # No Python AESGCM, a tag é concatenada ao final do ciphertext
-                    ciphertext = payload_bytes + tag_bytes
-                    
-                    decrypted_json_bytes = aesgcm.decrypt(iv_bytes, ciphertext, None)
-                    decrypted_json_str = decrypted_json_bytes.decode('utf-8')
+                if not encrypted_aes_key or not iv or not tag:
+                    return JsonResponse({'error': 'Faltam campos "encrypted_aes_key", "iv" ou "tag" para criptografia AES-GCM + RSA.'}, status=400)
 
-                else:
-                    # MODO ANTIGO (RSA Puro)
-                    decrypted_json_bytes = SECryptoService.decrypt_with_tpm(key_name, encrypted_payload)
-                    decrypted_json_str = decrypted_json_bytes.decode('utf-8')
+                # 1. Descriptografa a chave AES usando o hardware TPM
+                aes_key_bytes = SECryptoService.decrypt_with_tpm(key_name, encrypted_aes_key)
+                
+                # AESGCM pede chave de 16, 24 ou 32 bytes.
+                aesgcm = AESGCM(aes_key_bytes[:32]) # Pega os primeiros 32 bytes
+                
+                iv_bytes = base64.b64decode(iv)
+                tag_bytes = base64.b64decode(tag)
+                payload_bytes = base64.b64decode(encrypted_payload)
+                
+                # No Python AESGCM, a tag é concatenada ao final do ciphertext
+                ciphertext = payload_bytes + tag_bytes
+                
+                decrypted_json_bytes = aesgcm.decrypt(iv_bytes, ciphertext, None)
+                decrypted_json_str = decrypted_json_bytes.decode('utf-8')
                 
                 # Valida se o texto devolvido pelo TPM é um JSON válido
                 json.loads(decrypted_json_str)
