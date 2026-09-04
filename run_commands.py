@@ -13,28 +13,40 @@ for path_dir in GH_PATHS:
     if os.path.exists(path_dir) and path_dir not in os.environ.get("PATH", ""):
         os.environ["PATH"] = path_dir + os.pathsep + os.environ.get("PATH", "")
 
-# Caminho para o executavel do cz no .venv local
-VENV_CZ = os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "cz.exe")
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
+def safe_print(text):
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        print(text.encode(encoding, errors="replace").decode(encoding))
+
+# Caminho para o executavel Python no .venv local ou do sistema para rodar commitizen
 def get_cz_command():
-    if os.path.exists(VENV_CZ):
-        return f'"{VENV_CZ}"'
-    return "cz"
+    venv_python = os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "python.exe")
+    if os.path.exists(venv_python):
+        return f'"{venv_python}" -m commitizen'
+    return f'"{sys.executable}" -m commitizen'
 
 def run_command(command, description):
-    print(f"\n[>] Executando: {description}...")
+    safe_print(f"\n[>] Executando: {description}...")
     try:
         # Executa no PowerShell se for Windows
         shell = True if os.name == 'nt' else False
         result = subprocess.run(command, shell=shell, check=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
         if result.stdout:
-            print(result.stdout.strip())
-        print(f"[+] Sucesso: {description}")
+            safe_print(result.stdout.strip())
+        safe_print(f"[+] Sucesso: {description}")
     except subprocess.CalledProcessError as e:
-        print(f"[-] Erro em '{description}':")
+        safe_print(f"[-] Erro em '{description}':")
         error_msg = e.stderr.strip() if e.stderr else str(e)
-        encoding = sys.stdout.encoding or 'utf-8'
-        print(error_msg.encode(encoding, errors='replace').decode(encoding))
+        safe_print(error_msg)
         sys.exit(1)
 
 def pre_merge():
