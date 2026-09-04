@@ -218,4 +218,6 @@ postgres_data/
 #media — ignora uploads de usuários, mas versiona previews de layout
 media/*
 !media/layouts/
-!media/layouts/**
+!media/layouts/**
+se_keys_info.json
+*_public_key.txt
