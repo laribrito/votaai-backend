@@ -19,11 +19,13 @@ from Api.views.user.roleListView import RoleListView
 from Api.views.group.groupView import GroupViewSet
 from Api.views.permission.permissionView import PermissionViewSet
 from Api.views.ping.pingDesktopView import PingDesktopView
+from Api.views.admin.adminPreCadastroView import AdminPreCadastroViewSet
 
 # ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
 # ---------------------------------------------------------------------------
 router = DefaultRouter()
+router.register(r'admin/pre-cadastro', AdminPreCadastroViewSet, basename='admin-pre-cadastro')
 router.register(r'users/invite', UserInvitationViewSet, basename='user-invitation')
 router.register(r'password', PasswordManagementViewSet, basename='password-management')
 router.register(r'users', UserListViewSet, basename='user-list')
