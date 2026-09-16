@@ -20,6 +20,7 @@ from Api.views.group.groupView import GroupViewSet
 from Api.views.permission.permissionView import PermissionViewSet
 from Api.views.ping.pingDesktopView import PingDesktopView
 from Api.views.admin.adminPreCadastroView import AdminPreCadastroViewSet
+from Api.views.election.electionCreateView import ElectionCreateView
 
 # ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
@@ -50,6 +51,9 @@ urlpatterns = [
 
     # --- Testing ---
     path('ping-desktop/', PingDesktopView.as_view(), name='ping-desktop'),
+
+    # --- Eleição (Desktop) ---
+    path('election/create/', ElectionCreateView.as_view(), name='election-create'),
 
     # --- ViewSets ---
     path('', include(router.urls)),
