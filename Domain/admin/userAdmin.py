@@ -24,7 +24,9 @@ class UserAdmin(admin.ModelAdmin):
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
             'description': _('Assign groups (Roles) and individual permissions.'),
         }),
+        (_('Hardware & 2FA'), {'fields': ('chave_publica_maquina', 'totp_secret')}),
         (_('Audit Timestamps'), {'fields': ('last_login', 'date_joined', 'created_at', 'updated_at')}),
+
     )
     readonly_fields = ('created_at', 'updated_at')
 

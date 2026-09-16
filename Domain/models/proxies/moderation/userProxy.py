@@ -27,6 +27,15 @@ class UserProxy:
     def isAdmin(self) -> bool:
         return self.is_superuser or self.groups.filter(name=GroupRoles.ADMIN.value).exists()
 
+    @property
+    def nomeCompleto(self) -> str:
+        return self.get_full_name() or self.username
+
+    @property
+    def chavePublicaDaMaquina(self) -> str | None:
+        return getattr(self, 'chave_publica_maquina', None)
+
+
     # ------------------------------------------------------------------
     # Business constraints
     # ------------------------------------------------------------------

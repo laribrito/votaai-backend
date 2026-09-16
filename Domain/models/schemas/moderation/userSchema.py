@@ -23,17 +23,31 @@ class User(UserProxy, AbstractUser, TimestampSchemaMixin):
     first_name = models.CharField(
         _("first name"),
         max_length=150,
-        blank=False,
-        null=False
+        blank=True,
+        default=''
     )
     last_name = models.CharField(
         _("last name"),
         max_length=150,
-        blank=False,
-        null=False
+        blank=True,
+        default=''
     )
     email = models.EmailField(
         _("email address"),
         unique=True,
         blank=False
     )
+    chave_publica_maquina = models.TextField(
+        _("chave pública da máquina"),
+        blank=True,
+        null=True,
+        help_text=_("Chave pública RSA da máquina atrelada ao usuário para validação de hardware e criptografia")
+    )
+    totp_secret = models.CharField(
+        _("segredo TOTP"),
+        max_length=64,
+        blank=True,
+        null=True,
+        help_text=_("Segredo Base32 para autenticação em dois fatores (TOTP)")
+    )
+

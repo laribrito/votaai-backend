@@ -5,9 +5,11 @@ import struct
 import base64
 from pathlib import Path
 from django.conf import settings
+import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
+
 
 # Carrega a DLL nativa do Windows CNG (Cryptography Next Generation)
 ncrypt = ctypes.windll.ncrypt
@@ -25,8 +27,24 @@ ncrypt.NCryptOpenKey.restype = wintypes.LONG
 ncrypt.NCryptDecrypt.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
 ncrypt.NCryptDecrypt.restype = wintypes.LONG
 
+ncrypt.NCryptSignHash.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    wintypes.DWORD,
+    ctypes.POINTER(ctypes.c_ubyte),
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+    wintypes.DWORD
+]
+ncrypt.NCryptSignHash.restype = wintypes.LONG
+
 ncrypt.NCryptFreeObject.argtypes = [ctypes.c_void_p]
 ncrypt.NCryptFreeObject.restype = wintypes.LONG
+
+class BCRYPT_PKCS1_PADDING_INFO(ctypes.Structure):
+    _fields_ = [("pszAlgId", wintypes.LPCWSTR)]
+
 
 class SECryptoService:
     @staticmethod
@@ -169,3 +187,87 @@ class SECryptoService:
             "iv": base64.b64encode(iv).decode('utf-8'),
             "tag": base64.b64encode(tag).decode('utf-8')
         }
+
+    @staticmethod
+    def sign_with_tpm(key_name: str, data: bytes) -> str:
+        """
+        Assina os dados fornecidos utilizando a chave RSA armazenada no TPM/Secure Element (Windows CNG).
+        Retorna a assinatura em Base64.
+        """
+        hash_val = hashlib.sha256(data).digest()
+        hash_arr = (ctypes.c_ubyte * len(hash_val)).from_buffer_copy(hash_val)
+
+        hProv = ctypes.c_void_p()
+        hKey = ctypes.c_void_p()
+
+        try:
+            status = ncrypt.NCryptOpenStorageProvider(ctypes.byref(hProv), "Microsoft Platform Crypto Provider", 0)
+            if status != 0:
+                raise RuntimeError(f"Falha ao abrir TPM Provider: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            status = ncrypt.NCryptOpenKey(hProv, ctypes.byref(hKey), key_name, 0, 0)
+            if status != 0:
+                raise RuntimeError(f"Falha ao acessar chave '{key_name}': NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            pad_info = BCRYPT_PKCS1_PADDING_INFO("SHA256")
+            cbResult = wintypes.DWORD(0)
+
+            # 1. Mede o tamanho do buffer necessário
+            status = ncrypt.NCryptSignHash(
+                hKey,
+                ctypes.byref(pad_info),
+                hash_arr,
+                len(hash_val),
+                None,
+                0,
+                ctypes.byref(cbResult),
+                NCRYPT_PAD_PKCS1_FLAG
+            )
+            if status != 0:
+                raise RuntimeError(f"Falha ao medir tamanho da assinatura: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            sig_arr = (ctypes.c_ubyte * cbResult.value)()
+            # 2. Executa a assinatura de fato dentro do chip TPM
+            status = ncrypt.NCryptSignHash(
+                hKey,
+                ctypes.byref(pad_info),
+                hash_arr,
+                len(hash_val),
+                sig_arr,
+                cbResult.value,
+                ctypes.byref(cbResult),
+                NCRYPT_PAD_PKCS1_FLAG
+            )
+            if status != 0:
+                raise RuntimeError(f"Assinatura rejeitada pelo hardware TPM: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            sig_bytes = bytes(sig_arr[:cbResult.value])
+            return base64.b64encode(sig_bytes).decode('utf-8')
+
+        finally:
+            if hKey:
+                ncrypt.NCryptFreeObject(hKey)
+            if hProv:
+                ncrypt.NCryptFreeObject(hProv)
+
+    @classmethod
+    def verify_signature(cls, public_key, data: bytes, signature_b64: str) -> bool:
+        """
+        Verifica a assinatura digital RSA PKCS#1 v1.5 + SHA-256 usando a chave pública informada.
+        Suporta instância de RSAPublicKey ou chave em formato PEM/DER/CNG BLOB.
+        """
+        try:
+            if not isinstance(public_key, rsa.RSAPublicKey):
+                public_key = cls.load_rsa_public_key(public_key)
+
+            sig_bytes = base64.b64decode(signature_b64.strip())
+            public_key.verify(
+                sig_bytes,
+                data,
+                padding.PKCS1v15(),
+                hashes.SHA256()
+            )
+            return True
+        except Exception:
+            return False
+

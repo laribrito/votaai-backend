@@ -92,11 +92,13 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 client_public_key = body_data.get('client_public_key')
 
                 # Se a chave pública do cliente veio dentro do envelope JSON da requisição, salva
-                if client_public_key and device_type:
-                    try:
-                        SECryptoService.save_client_public_key(device_type, client_public_key)
-                    except Exception as e:
-                        logger.warning(f"Não foi possível salvar chave pública enviada no body: {e}")
+                if client_public_key:
+                    request._client_public_key = client_public_key
+                    if device_type:
+                        try:
+                            SECryptoService.save_client_public_key(device_type, client_public_key)
+                        except Exception as e:
+                            logger.warning(f"Não foi possível salvar chave pública enviada no body: {e}")
 
                 if not encrypted_payload:
                     return JsonResponse({'error': 'Payload criptografado não encontrado. Envie no campo "encrypted_payload".'}, status=400)
@@ -170,7 +172,12 @@ class SEDecryptMiddleware(MiddlewareMixin):
             return response
 
         try:
-            client_pub_key = SECryptoService.get_client_public_key(device_type)
+            req_client_pub_key = getattr(request, '_client_public_key', None)
+            if req_client_pub_key:
+                client_pub_key = SECryptoService.load_rsa_public_key(req_client_pub_key)
+            else:
+                client_pub_key = SECryptoService.get_client_public_key(device_type)
+
             if not client_pub_key:
                 return JsonResponse({
                     'error': f'Chave pública do cliente ({device_type}) não encontrada. Envie sua chave pública no campo "client_public_key".'
