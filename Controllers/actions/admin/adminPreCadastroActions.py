@@ -34,6 +34,14 @@ class AdminPreCadastroActions:
             or data.get('client_public_key')
             or client_pub_key_fallback
         )
+        usuario_maquina = (
+            data.get('usuario_maquina')
+            or data.get('machine_user')
+            or data.get('device_id')
+            or data.get('machine_id')
+        )
+        if usuario_maquina:
+            usuario_maquina = str(usuario_maquina).strip()
 
         if not email:
             raise ValidationError({"email": "O e-mail é obrigatório."})
@@ -56,14 +64,33 @@ class AdminPreCadastroActions:
         except Exception as e:
             raise ValidationError({"chave_publica_maquina": f"Chave pública da máquina inválida: {str(e)}"})
 
+        # Normaliza chave pública para evitar incompatibilidades de quebra de linha CRLF vs LF
+        chave_publica_maquina = chave_publica_maquina.strip().replace('\r\n', '\n')
 
-        # Valida se a máquina já está vinculada a outro usuário ativo
+        if not usuario_maquina:
+            raise ValidationError({"machine_user": "O identificador de usuário da máquina (machine_user/device_id) é obrigatório."})
+
+        # 1. Valida se o usuário de máquina já está vinculado a outro usuário ativo
         existing_machine_user = User.objects.filter(
-            chave_publica_maquina=chave_publica_maquina.strip(),
+            machine_user=usuario_maquina,
             is_active=True
         ).exclude(email=email).first()
         if existing_machine_user:
-            raise ValidationError({"chave_publica_maquina": "Esta máquina já está vinculada a outro usuário ativo."})
+            raise ValidationError({
+                "machine_user": f"Esta máquina ({usuario_maquina}) já está vinculada a outro usuário ativo ({existing_machine_user.email}).",
+                "usuario_maquina": f"Esta máquina ({usuario_maquina}) já está vinculada a outro usuário ativo ({existing_machine_user.email})."
+            })
+
+
+        # 2. Valida se a chave pública já está vinculada a outro usuário ativo
+        existing_key_user = User.objects.filter(
+            machine_public_key=chave_publica_maquina,
+            is_active=True
+        ).exclude(email=email).first()
+        if existing_key_user:
+            raise ValidationError({
+                "chave_publica_maquina": f"Esta chave pública já está vinculada a outro usuário ativo ({existing_key_user.email})."
+            })
 
         with transaction.atomic():
             totp_secret = TOTPService.generate_secret()
@@ -71,7 +98,8 @@ class AdminPreCadastroActions:
                 user = existing_user
                 user.set_password(senha)
                 user.is_active = False
-                user.chave_publica_maquina = chave_publica_maquina.strip()
+                user.machine_public_key = chave_publica_maquina
+                user.machine_user = usuario_maquina
                 user.totp_secret = totp_secret
                 user.save()
             else:
@@ -80,9 +108,11 @@ class AdminPreCadastroActions:
                     email=email,
                     password=senha,
                     is_active=False,
-                    chave_publica_maquina=chave_publica_maquina.strip(),
+                    machine_public_key=chave_publica_maquina,
+                    machine_user=usuario_maquina,
                     totp_secret=totp_secret
                 )
+
 
         uri_provisionamento = TOTPService.generate_provisioning_uri(totp_secret, email, issuer_name="VotaAI")
         mensagem = "Pré-cadastro iniciado com sucesso. Configure o aplicativo autenticador e envie o código TOTP para ativação."
@@ -107,6 +137,7 @@ class AdminPreCadastroActions:
         - Recebe email, codigo_totp e assinatura da máquina
         - Valida a assinatura da máquina usando a chave pública registrada no usuário
         - Valida o código TOTP com o segredo do usuário
+        - Revalida unicidade da máquina/chave
         - Ativa o usuário administrador e atribui a role 'Administrador'
         - Assina a mensagem de sucesso com a chave do TPM (VotaAI_SecureKey_1)
         """
@@ -130,6 +161,28 @@ class AdminPreCadastroActions:
 
         if not user.totp_secret:
             raise ValidationError({"error": "Segredo TOTP não configurado para este usuário. Inicie o pré-cadastro novamente."})
+
+        # Revalidação de unicidade no momento da confirmação
+        if user.machine_user:
+            conflict_user = User.objects.filter(
+                machine_user=user.machine_user,
+                is_active=True
+            ).exclude(id=user.id).first()
+            if conflict_user:
+                raise ValidationError({
+                    "usuario_maquina": f"Esta máquina ({user.machine_user}) já foi ativada por outro usuário ({conflict_user.email})."
+                })
+
+        if user.machine_public_key:
+            conflict_key_user = User.objects.filter(
+                machine_public_key=user.machine_public_key,
+                is_active=True
+            ).exclude(id=user.id).first()
+            if conflict_key_user:
+                raise ValidationError({
+                    "chave_publica_maquina": f"Esta máquina já foi ativada por outro usuário ({conflict_key_user.email})."
+                })
+
 
         # 1. Valida assinatura da máquina
         candidate_payloads = [
@@ -169,3 +222,4 @@ class AdminPreCadastroActions:
             "mensagem": mensagem,
             "assinatura": assinatura_servidor
         }
+

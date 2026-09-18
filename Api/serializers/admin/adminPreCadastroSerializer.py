@@ -15,23 +15,44 @@ class AdminPreCadastroIniciarSerializer(serializers.Serializer):
         style={'input_type': 'password'},
         error_messages={'required': 'A senha é obrigatória.'}
     )
-    chave_publica_maquina = serializers.CharField(
+    machine_public_key = serializers.CharField(
         required=False,
         default=None,
         allow_null=True,
-        help_text='Chave pública RSA da máquina. Pode vir no corpo ou no envelope client_public_key.'
+        help_text='Machine RSA public key. Can be sent in body or client_public_key envelope.'
     )
+    machine_user = serializers.CharField(
+        required=True,
+        max_length=64,
+        error_messages={'required': 'O identificador de usuário da máquina (machine_user/device_id) é obrigatório.'},
+        help_text='Unique, OS-agnostic identifier of the physical device/machine (e.g. dev-xxxxxxxx).'
+    )
+
 
     def to_internal_value(self, data):
         # Suporte a camelCase e aliases comuns
         mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
         if 'password' in mutable_data and 'senha' not in mutable_data:
             mutable_data['senha'] = mutable_data['password']
+
+        # Chave pública (inglês e português)
+        for alias in ['chave_publica_maquina', 'chavePublicaMaquina', 'machinePublicKey', 'client_public_key']:
+            if alias in mutable_data and 'machine_public_key' not in mutable_data:
+                mutable_data['machine_public_key'] = mutable_data[alias]
+                break
         if 'machine_public_key' in mutable_data and 'chave_publica_maquina' not in mutable_data:
             mutable_data['chave_publica_maquina'] = mutable_data['machine_public_key']
-        if 'chavePublicaMaquina' in mutable_data and 'chave_publica_maquina' not in mutable_data:
-            mutable_data['chave_publica_maquina'] = mutable_data['chavePublicaMaquina']
+
+        # Usuário de máquina (inglês e português)
+        for alias in ['usuario_maquina', 'usuarioMaquina', 'machineUser', 'device_id', 'deviceId', 'machine_id', 'machineId']:
+            if alias in mutable_data and 'machine_user' not in mutable_data:
+                mutable_data['machine_user'] = mutable_data[alias]
+                break
+        if 'machine_user' in mutable_data and 'usuario_maquina' not in mutable_data:
+            mutable_data['usuario_maquina'] = mutable_data['machine_user']
+
         return super().to_internal_value(mutable_data)
+
 
 
 class AdminPreCadastroConfirmarSerializer(serializers.Serializer):
