@@ -5,7 +5,8 @@ from drf_spectacular.types import OpenApiTypes
 
 class LoginSerializer(serializers.Serializer):
     """
-    Validates the login credentials (username and password) received from the client.
+    Validates the login credentials (username, password, 2FA TOTP code and machine signature)
+    received from the client.
     Input-only serializer.
     """
     username = serializers.CharField(
@@ -23,6 +24,36 @@ class LoginSerializer(serializers.Serializer):
             'required': 'The password field is required.'
         }
     )
+    codigo_totp = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Código numérico de 6 dígitos gerado pelo aplicativo autenticador (TOTP)."
+    )
+    assinatura = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Assinatura digital RSA da máquina gerada via hardware TPM."
+    )
+    usuario_maquina = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Identificador único da máquina física."
+    )
+
+    def to_internal_value(self, data):
+        mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
+        if 'codigoTotp' in mutable_data and 'codigo_totp' not in mutable_data:
+            mutable_data['codigo_totp'] = mutable_data['codigoTotp']
+        if 'totp_code' in mutable_data and 'codigo_totp' not in mutable_data:
+            mutable_data['codigo_totp'] = mutable_data['totp_code']
+        if 'machine_user' in mutable_data and 'usuario_maquina' not in mutable_data:
+            mutable_data['usuario_maquina'] = mutable_data['machine_user']
+        if 'device_id' in mutable_data and 'usuario_maquina' not in mutable_data:
+            mutable_data['usuario_maquina'] = mutable_data['device_id']
+        return super().to_internal_value(mutable_data)
 
 class LoginUserSerializer(serializers.ModelSerializer):
     """
@@ -42,9 +73,6 @@ class LoginUserSerializer(serializers.ModelSerializer):
         """
         Retrieves all group names associated with the user.
         """
-        # [Integração Backend -> Frontend]
-        # Padroniza o payload de `roles` como lista de objetos com chave `name`
-        # para manter compatibilidade com o tipo UserAuth usado no frontend.
         return [{"name": role_name} for role_name in obj.groups.values_list('name', flat=True)]
 
     def get_fullName(self, obj) -> str:
@@ -66,4 +94,3 @@ class LoginResponseSerializer(serializers.Serializer):
     """
     user = LoginUserSerializer()
     token = serializers.CharField()
-    
