@@ -48,6 +48,7 @@ class AdminPreCadastroTests(APITestCase):
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8')
 
+        self.device_id = "dev-test-suite-machine"
         self.url_iniciar = reverse('admin-pre-cadastro-iniciar')
         self.url_confirmar = reverse('admin-pre-cadastro-confirmar')
 
@@ -57,7 +58,12 @@ class AdminPreCadastroTests(APITestCase):
 
     def _encrypt_request_body(self, payload_dict: dict) -> dict:
         """Helper para simular o cliente Desktop cifrando a requisição com a chave do TPM do servidor."""
-        json_bytes = json.dumps(payload_dict).encode('utf-8')
+        payload_copy = dict(payload_dict)
+        omit_machine = payload_copy.pop('_omit_machine_user', False)
+        if not omit_machine and 'machine_user' not in payload_copy and 'usuario_maquina' not in payload_copy and 'codigo_totp' not in payload_copy:
+            payload_copy['machine_user'] = self.device_id
+
+        json_bytes = json.dumps(payload_copy).encode('utf-8')
         aes_key = os.urandom(32)
         iv = os.urandom(12)
         aesgcm = AESGCM(aes_key)
@@ -70,6 +76,7 @@ class AdminPreCadastroTests(APITestCase):
             aes_key,
             padding.PKCS1v15()
         )
+
 
         return {
             "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
@@ -287,4 +294,52 @@ class AdminPreCadastroTests(APITestCase):
             )
             resp_data = self._decrypt_response_body(response)
             self.assertIn("senha", resp_data)
+
+    def test_pre_cadastro_with_same_usuario_maquina_fails(self):
+        """Valida que tentar pré-cadastrar outro admin para a mesma máquina física (usuario_maquina) retorna erro 400."""
+        existing_admin_email = "existing.machine.admin@votaai.org"
+        device_id = "dev-unique-machine-99"
+        
+        # Cria admin ativo vinculado a esse usuario_maquina
+        User.objects.create_user(
+            username=existing_admin_email,
+            email=existing_admin_email,
+            password="SenhaExistente123!",
+            is_active=True,
+            usuario_maquina=device_id
+        )
+
+        # Nova chave RSA simulando tentativa de burlar a chave TPM na mesma máquina física
+        other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        other_pub_pem = other_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+
+        req = {
+            "email": "intruder.admin@votaai.org",
+            "senha": "OutraSenhaForte!123",
+            "chave_publica_maquina": other_pub_pem,
+            "usuario_maquina": device_id
+        }
+        response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("usuario_maquina", resp_data)
+
+    def test_pre_cadastro_without_machine_user_fails(self):
+        """Valida que tentar pré-cadastrar sem identificador de máquina (machine_user) retorna erro 400."""
+        req = {
+            "email": "no.machine@votaai.org",
+            "senha": "SenhaValida123!",
+            "chave_publica_maquina": self.machine_public_pem,
+            "_omit_machine_user": True
+        }
+        response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("machine_user", resp_data)
+
+
 
