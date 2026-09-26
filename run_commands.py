@@ -29,17 +29,18 @@ def safe_print(text):
 
 # Caminho para o executavel Python no .venv local ou do sistema para rodar commitizen
 def get_cz_command():
-    venv_python = os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "python.exe")
-    if os.path.exists(venv_python):
-        return f'"{venv_python}" -m commitizen'
+    venv_win = os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "python.exe")
+    if os.path.exists(venv_win):
+        return f'"{venv_win}" -m commitizen'
+    venv_unix = os.path.join(os.path.dirname(__file__), ".venv", "bin", "python")
+    if os.path.exists(venv_unix):
+        return f'"{venv_unix}" -m commitizen'
     return f'"{sys.executable}" -m commitizen'
 
 def run_command(command, description):
     safe_print(f"\n[>] Executando: {description}...")
     try:
-        # Executa no PowerShell se for Windows
-        shell = True if os.name == 'nt' else False
-        result = subprocess.run(command, shell=shell, check=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+        result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
         if result.stdout:
             safe_print(result.stdout.strip())
         safe_print(f"[+] Sucesso: {description}")
@@ -57,7 +58,7 @@ def pre_merge():
     run_command("git status -s", "Verificando status do repositório")
     
     # 2. Testes automatizados (Django)
-    run_command("python manage.py test", "Executando testes automatizados do Django")
+    run_command(f'"{sys.executable}" manage.py test', "Executando testes automatizados do Django")
 
 def create_pr(flag="--fill"):
     print("\n=== CREATING PULL REQUEST ===")
