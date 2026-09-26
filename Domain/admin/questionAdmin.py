@@ -6,7 +6,6 @@ class QuestionInline(admin.StackedInline):
     model = Question
     extra = 0
 
-
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
     list_display = ('id', 'election', 'order', 'question')

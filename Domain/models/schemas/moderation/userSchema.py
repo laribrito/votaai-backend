@@ -21,33 +21,40 @@ class User(UserProxy, AbstractUser, TimestampSchemaMixin):
         ordering = ['-created_at']
 
     first_name = models.CharField(
-        _("first name"),
+        _('first name'),
         max_length=150,
         blank=True,
         default=''
     )
     last_name = models.CharField(
-        _("last name"),
+        _('last name'),
         max_length=150,
         blank=True,
         default=''
     )
     email = models.EmailField(
-        _("email address"),
+        _('email address'),
         unique=True,
         blank=False
     )
-    chave_publica_maquina = models.TextField(
-        _("chave pública da máquina"),
+    machine_public_key = models.TextField(
+        _('machine public key'),
         blank=True,
         null=True,
-        help_text=_("Chave pública RSA da máquina atrelada ao usuário para validação de hardware e criptografia")
+        help_text=_('Machine RSA public key linked to the user for hardware validation and cryptography')
     )
-    totp_secret = models.CharField(
-        _("segredo TOTP"),
+    machine_user = models.CharField(
+        _('machine user'),
         max_length=64,
         blank=True,
         null=True,
-        help_text=_("Segredo Base32 para autenticação em dois fatores (TOTP)")
+        db_index=True,
+        help_text=_('Unique, OS-agnostic identifier of the physical device or machine')
     )
-
+    totp_secret = models.CharField(
+        _('TOTP secret'),
+        max_length=64,
+        blank=True,
+        null=True,
+        help_text=_('Base32 secret for two-factor authentication (TOTP)')
+    )

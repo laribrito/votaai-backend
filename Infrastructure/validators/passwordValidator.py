@@ -1,6 +1,7 @@
 import re
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
+from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 class PasswordValidator:
@@ -61,7 +62,7 @@ class PasswordValidator:
         Lança DRF ValidationError em caso de inconsistência.
         """
         if not password:
-            raise DRFValidationError({"senha": "A senha é obrigatória."})
+            raise DRFValidationError({"password": _("Password is required.")})
 
         errors = cls.get_complexity_errors(password)
 
@@ -75,4 +76,4 @@ class PasswordValidator:
                     errors.append(msg)
 
         if errors:
-            raise DRFValidationError({"senha": errors})
+            raise DRFValidationError({"password": errors})

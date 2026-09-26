@@ -9,6 +9,7 @@ from Api.serializers.group.groupSerializer import (
     GroupDetailSerializer,
     GroupCreateUpdateSerializer
 )
+from Controllers.querysets.group.groupQueryset import GroupQuerySet
 from Controllers.actions.group.groupActions import GroupActions
 from Infrastructure.permissions import CanManageGroups
 
@@ -64,7 +65,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Group.objects.none()
-        return GroupActions.getBaseQueryset()
+        return GroupQuerySet.getBaseQueryset()
 
     def get_serializer_class(self):
         if self.action == 'retrieve':

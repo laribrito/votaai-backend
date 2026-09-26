@@ -133,24 +133,24 @@ class ElectionCreateTests(APITestCase):
         chave_publica_eleicao = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQE..."
         key_handle = "0x81010002"
         colegiado = [
-            {"email": "eleitor1@votaai.org", "nome": "Eleitor Um", "senha": "SenhaDoEleitor123!"},
-            {"email": "eleitor2@votaai.org", "nome": "Eleitor Dois"},
-            {"email": "eleitor3@votaai.org", "nome": "Eleitor Três"}
+            {"email": "eleitor1@votaai.org", "full_name": "Eleitor Um", "password": "SenhaDoEleitor123!"},
+            {"email": "eleitor2@votaai.org", "full_name": "Eleitor Dois"},
+            {"email": "eleitor3@votaai.org", "full_name": "Eleitor Três"}
         ]
         cedula = [
             {
-                "titulo": "Escolha o Presidente",
-                "opcoes": [
-                    {"nome": "Chapa 1 - Inovação"},
-                    {"nome": "Chapa 2 - Renovação"},
-                    {"nome": "Branco / Nulo"}
+                "question": "Escolha o Presidente",
+                "options": [
+                    {"label": "Chapa 1 - Inovação"},
+                    {"label": "Chapa 2 - Renovação"},
+                    {"label": "Branco / Nulo"}
                 ]
             },
             {
-                "titulo": "Aprova as novas contas?",
-                "opcoes": [
-                    {"nome": "Sim"},
-                    {"nome": "Não"}
+                "question": "Aprova as novas contas?",
+                "options": [
+                    {"label": "Sim"},
+                    {"label": "Não"}
                 ]
             }
         ]
@@ -160,13 +160,13 @@ class ElectionCreateTests(APITestCase):
         machine_signature = self._sign_with_machine_key(payload_to_sign)
 
         req_payload = {
-            "titulo": titulo,
-            "cedula": cedula,
-            "colegiadoEleitoral": colegiado,
-            "chavePublica": chave_publica_eleicao,
-            "keyHandle": key_handle,
-            "assinatura": machine_signature,
-            "chave_publica_maquina": self.machine_public_pem
+            "title": titulo,
+            "ballot": cedula,
+            "electoral_college": colegiado,
+            "public_key": chave_publica_eleicao,
+            "key_handle": key_handle,
+            "signature": machine_signature,
+            "machine_public_key": self.machine_public_pem
         }
 
         # Cifra envelope para o servidor
@@ -180,14 +180,14 @@ class ElectionCreateTests(APITestCase):
         decrypted_response = self._decrypt_response_body(response)
 
         self.assertIn("id", decrypted_response)
-        self.assertIn("qtdPerguntas", decrypted_response)
-        self.assertIn("qtdOpcoes", decrypted_response)
-        self.assertIn("assinatura", decrypted_response)
+        self.assertIn("questions_count", decrypted_response)
+        self.assertIn("options_count", decrypted_response)
+        self.assertIn("signature", decrypted_response)
 
         election_id = decrypted_response["id"]
-        qtd_perguntas = decrypted_response["qtdPerguntas"]
-        qtd_opcoes = decrypted_response["qtdOpcoes"]
-        assinatura_servidor = decrypted_response["assinatura"]
+        qtd_perguntas = decrypted_response["questions_count"]
+        qtd_opcoes = decrypted_response["options_count"]
+        assinatura_servidor = decrypted_response["signature"]
 
         # Verifica contagens: 2 perguntas e 5 opções no total (3 + 2)
         self.assertEqual(qtd_perguntas, 2)
@@ -260,18 +260,18 @@ class ElectionCreateTests(APITestCase):
     def test_create_election_with_invalid_machine_signature_fails(self):
         """Valida que uma assinatura inválida da máquina física é rejeitada com erro 400."""
         req_payload = {
-            "titulo": "Eleição Inválida",
-            "cedula": [
+            "title": "Eleição Inválida",
+            "ballot": [
                 {
-                    "titulo": "Pergunta 1",
-                    "opcoes": ["Opção A", "Opção B"]
+                    "question": "Pergunta 1",
+                    "options": ["Opção A", "Opção B"]
                 }
             ],
-            "colegiadoEleitoral": ["user1@votaai.org"],
-            "chavePublica": "chave_falsa_123",
-            "keyHandle": "0x81010099",
-            "assinatura": base64.b64encode(b"assinatura_invalida_totalmente_falsa").decode('utf-8'),
-            "chave_publica_maquina": self.machine_public_pem
+            "electoral_college": ["user1@votaai.org"],
+            "public_key": "chave_falsa_123",
+            "key_handle": "0x81010099",
+            "signature": base64.b64encode(b"assinatura_invalida_totalmente_falsa").decode('utf-8'),
+            "machine_public_key": self.machine_public_pem
         }
 
         encrypted_body = self._encrypt_request_body(req_payload)
@@ -280,7 +280,7 @@ class ElectionCreateTests(APITestCase):
         # A resposta de erro também é cifrada pelo middleware
         decrypted_response = self._decrypt_response_body(response)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("assinatura", decrypted_response)
+        self.assertIn("signature", decrypted_response)
 
     def test_create_election_without_questions_fails(self):
         """Valida que cédula sem perguntas é rejeitada com erro 400."""
@@ -290,13 +290,13 @@ class ElectionCreateTests(APITestCase):
         sig = self._sign_with_machine_key(f"{titulo}:{chave_pub}:{key_handle}".encode('utf-8'))
 
         req_payload = {
-            "titulo": titulo,
-            "cedula": [],
-            "colegiadoEleitoral": ["user1@votaai.org"],
-            "chavePublica": chave_pub,
-            "keyHandle": key_handle,
-            "assinatura": sig,
-            "chave_publica_maquina": self.machine_public_pem
+            "title": titulo,
+            "ballot": [],
+            "electoral_college": ["user1@votaai.org"],
+            "public_key": chave_pub,
+            "key_handle": key_handle,
+            "signature": sig,
+            "machine_public_key": self.machine_public_pem
         }
 
         encrypted_body = self._encrypt_request_body(req_payload)
@@ -304,4 +304,5 @@ class ElectionCreateTests(APITestCase):
 
         decrypted_response = self._decrypt_response_body(response)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("cedula", decrypted_response)
+        self.assertIn("ballot", decrypted_response)
+

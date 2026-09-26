@@ -15,9 +15,9 @@ class GroupActions:
     @staticmethod
     def getBaseQueryset():
         """
-        Retorna o QuerySet base otimizado de grupos.
+        Retorna o QuerySet base otimizado de grupos delegando para GroupQuerySet.
         """
-        return GroupQuerySet(model=Group).withDetails().defaultListOrder()
+        return GroupQuerySet.getBaseQueryset()
 
     @staticmethod
     def createGroup(validated_data: dict) -> Group:
@@ -27,7 +27,7 @@ class GroupActions:
         name = validated_data.get('name', '').strip()
         permissionIdentifiers = validated_data.get('permissions', [])
 
-        if Group.objects.filter(name__iexact=name).exists():
+        if GroupQuerySet(model=Group).byName(name).exists():
             raise ValidationError({"name": "A group (role) with this name already exists."})
 
         with transaction.atomic():
@@ -48,7 +48,7 @@ class GroupActions:
         with transaction.atomic():
             if name is not None:
                 cleanName = name.strip()
-                if Group.objects.filter(name__iexact=cleanName).exclude(id=group.id).exists():
+                if GroupQuerySet(model=Group).byName(cleanName).exclude(id=group.id).exists():
                     raise ValidationError({"name": "A group (role) with this name already exists."})
                 group.name = cleanName
                 group.save()

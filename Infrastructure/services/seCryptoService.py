@@ -1,54 +1,221 @@
-import ctypes
-from ctypes import wintypes
-import os
-import struct
 import base64
-from pathlib import Path
-from django.conf import settings
 import hashlib
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import json
+import logging
+import os
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import tempfile
+
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from django.conf import settings
 
+logger = logging.getLogger(__name__)
 
-# Carrega a DLL nativa do Windows CNG (Cryptography Next Generation)
-ncrypt = ctypes.windll.ncrypt
+# Configuração do Windows CNG (carregado apenas quando em ambiente Windows)
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
 
-# Constante para indicar padding PKCS#1
-NCRYPT_PAD_PKCS1_FLAG = 0x00000002
+    # Carrega a DLL nativa do Windows CNG (Cryptography Next Generation)
+    ncrypt = ctypes.windll.ncrypt
 
-# Mapeamento dos tipos de argumentos e retorno para garantir chamadas seguras em C
-ncrypt.NCryptOpenStorageProvider.argtypes = [ctypes.POINTER(ctypes.c_void_p), wintypes.LPCWSTR, wintypes.DWORD]
-ncrypt.NCryptOpenStorageProvider.restype = wintypes.LONG
+    # Constante para indicar padding PKCS#1
+    NCRYPT_PAD_PKCS1_FLAG = 0x00000002
 
-ncrypt.NCryptOpenKey.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
-ncrypt.NCryptOpenKey.restype = wintypes.LONG
+    # Mapeamento dos tipos de argumentos e retorno para garantir chamadas seguras em C
+    ncrypt.NCryptOpenStorageProvider.argtypes = [ctypes.POINTER(ctypes.c_void_p), wintypes.LPCWSTR, wintypes.DWORD]
+    ncrypt.NCryptOpenStorageProvider.restype = wintypes.LONG
 
-ncrypt.NCryptDecrypt.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
-ncrypt.NCryptDecrypt.restype = wintypes.LONG
+    ncrypt.NCryptOpenKey.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
+    ncrypt.NCryptOpenKey.restype = wintypes.LONG
 
-ncrypt.NCryptSignHash.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_ubyte),
-    wintypes.DWORD,
-    ctypes.POINTER(ctypes.c_ubyte),
-    wintypes.DWORD,
-    ctypes.POINTER(wintypes.DWORD),
-    wintypes.DWORD
-]
-ncrypt.NCryptSignHash.restype = wintypes.LONG
+    ncrypt.NCryptDecrypt.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+    ncrypt.NCryptDecrypt.restype = wintypes.LONG
 
-ncrypt.NCryptFreeObject.argtypes = [ctypes.c_void_p]
-ncrypt.NCryptFreeObject.restype = wintypes.LONG
+    ncrypt.NCryptSignHash.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ubyte),
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_ubyte),
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.DWORD
+    ]
+    ncrypt.NCryptSignHash.restype = wintypes.LONG
 
-class BCRYPT_PKCS1_PADDING_INFO(ctypes.Structure):
-    _fields_ = [("pszAlgId", wintypes.LPCWSTR)]
+    ncrypt.NCryptFreeObject.argtypes = [ctypes.c_void_p]
+    ncrypt.NCryptFreeObject.restype = wintypes.LONG
+
+    class BCRYPT_PKCS1_PADDING_INFO(ctypes.Structure):
+        _fields_ = [("pszAlgId", wintypes.LPCWSTR)]
 
 
 class SECryptoService:
+    # =========================================================================
+    # Helpers para Linux TPM 2.0 (tpm2-tools)
+    # =========================================================================
+    @classmethod
+    def _get_base_dir(cls) -> Path:
+        return Path(getattr(settings, 'BASE_DIR', Path.cwd()))
+
+    @classmethod
+    def _get_tpm_keys_dir(cls) -> Path:
+        tpm_dir = cls._get_base_dir() / '.tpm_keys'
+        tpm_dir.mkdir(parents=True, exist_ok=True)
+        return tpm_dir
+
+    @classmethod
+    def _ensure_linux_tpm_context(cls, key_name: str) -> Path:
+        """
+        Garante que o contexto TPM da chave (.ctx) está disponível e carregado no TPM 2.0.
+        """
+        tpm_dir = cls._get_tpm_keys_dir()
+        key_ctx = tpm_dir / f"{key_name}.ctx"
+        primary_ctx = tpm_dir / 'primary.ctx'
+        key_pub = tpm_dir / f"{key_name}.pub"
+        key_priv = tpm_dir / f"{key_name}.priv"
+
+        if not key_pub.exists() or not key_priv.exists():
+            raise FileNotFoundError(
+                f"Arquivos de chave TPM para '{key_name}' não encontrados em {tpm_dir}. "
+                "Execute 'python manage.py generate_se_keys' para gerar as chaves no chip TPM 2.0."
+            )
+
+        if not primary_ctx.exists():
+            res_p = subprocess.run([
+                "tpm2_createprimary", "-C", "o", "-g", "sha256", "-G", "rsa", "-c", str(primary_ctx)
+            ], capture_output=True, text=True)
+            if res_p.returncode != 0:
+                raise RuntimeError(
+                    f"Erro ao acessar Primary Key no TPM: {res_p.stderr.strip()}. "
+                    "Verifique permissões em /dev/tpmrm0 (sudo chmod 666 /dev/tpmrm0 ou sudo usermod -aG tss $USER)."
+                )
+
+        if not key_ctx.exists():
+            res_l = subprocess.run([
+                "tpm2_load", "-C", str(primary_ctx), "-u", str(key_pub), "-r", str(key_priv), "-c", str(key_ctx)
+            ], capture_output=True, text=True)
+            if res_l.returncode != 0:
+                raise RuntimeError(f"Erro ao carregar chave '{key_name}' no TPM: {res_l.stderr.strip()}")
+
+        return key_ctx
+
+    @classmethod
+    def _decrypt_with_linux_tpm(cls, key_name: str, cipher_bytes: bytes) -> bytes:
+        key_ctx = cls._ensure_linux_tpm_context(key_name)
+        primary_ctx = cls._get_tpm_keys_dir() / 'primary.ctx'
+        key_pub = cls._get_tpm_keys_dir() / f"{key_name}.pub"
+        key_priv = cls._get_tpm_keys_dir() / f"{key_name}.priv"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_path = os.path.join(tmpdir, 'in.bin')
+            out_path = os.path.join(tmpdir, 'out.bin')
+
+            with open(in_path, 'wb') as f:
+                f.write(cipher_bytes)
+
+            cmd = [
+                "tpm2_rsadecrypt",
+                "-c", str(key_ctx),
+                "-s", "rsaes",
+                "-o", out_path,
+                in_path
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                # Se o contexto no TPM expirou na memória volátil, recarrega e tenta novamente
+                subprocess.run([
+                    "tpm2_createprimary", "-C", "o", "-g", "sha256", "-G", "rsa", "-c", str(primary_ctx)
+                ], capture_output=True)
+                subprocess.run([
+                    "tpm2_load", "-C", str(primary_ctx), "-u", str(key_pub), "-r", str(key_priv), "-c", str(key_ctx)
+                ], capture_output=True)
+                res = subprocess.run(cmd, capture_output=True, text=True)
+                if res.returncode != 0:
+                    raise ValueError(f"Descriptografia rejeitada pelo hardware TPM: {res.stderr.strip()}")
+
+            with open(out_path, 'rb') as f:
+                return f.read()
+
+    @classmethod
+    def _sign_with_linux_tpm(cls, key_name: str, data: bytes) -> str:
+        key_ctx = cls._ensure_linux_tpm_context(key_name)
+        primary_ctx = cls._get_tpm_keys_dir() / 'primary.ctx'
+        key_pub = cls._get_tpm_keys_dir() / f"{key_name}.pub"
+        key_priv = cls._get_tpm_keys_dir() / f"{key_name}.priv"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_path = os.path.join(tmpdir, 'data.bin')
+            sig_path = os.path.join(tmpdir, 'sig.bin')
+
+            with open(in_path, 'wb') as f:
+                f.write(data)
+
+            cmd = [
+                "tpm2_sign",
+                "-c", str(key_ctx),
+                "-g", "sha256",
+                "-s", "rsassa",
+                "-f", "plain",
+                "-o", sig_path,
+                in_path
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                # Se o contexto no TPM expirou na memória volátil, recarrega e tenta novamente
+                subprocess.run([
+                    "tpm2_createprimary", "-C", "o", "-g", "sha256", "-G", "rsa", "-c", str(primary_ctx)
+                ], capture_output=True)
+                subprocess.run([
+                    "tpm2_load", "-C", str(primary_ctx), "-u", str(key_pub), "-r", str(key_priv), "-c", str(key_ctx)
+                ], capture_output=True)
+                res = subprocess.run(cmd, capture_output=True, text=True)
+                if res.returncode != 0:
+                    raise RuntimeError(f"Erro na assinatura com hardware TPM: {res.stderr.strip()}")
+
+            with open(sig_path, 'rb') as f:
+                sig_bytes = f.read()
+
+            return base64.b64encode(sig_bytes).decode('utf-8')
+
+    @classmethod
+    def export_cng_public_blob(cls, public_key: rsa.RSAPublicKey) -> bytes:
+        """
+        Exporta a chave pública RSA no formato BCRYPT_RSAKEY_BLOB da Microsoft CNG (RSA1),
+        permitindo interoperabilidade completa entre Linux, Windows e clientes de desktop/mobile.
+        """
+        public_numbers = public_key.public_numbers()
+        e = public_numbers.e
+        n = public_numbers.n
+
+        e_bytes = e.to_bytes((e.bit_length() + 7) // 8, byteorder='big')
+        n_bytes = n.to_bytes((n.bit_length() + 7) // 8, byteorder='big')
+
+        magic = 0x31415352  # 'RSA1' em little-endian
+        bit_len = n.bit_length()
+        cb_pub_exp = len(e_bytes)
+        cb_modulus = len(n_bytes)
+        cb_prime1 = 0
+        cb_prime2 = 0
+
+        header = struct.pack('<IIIIII', magic, bit_len, cb_pub_exp, cb_modulus, cb_prime1, cb_prime2)
+        return header + e_bytes + n_bytes
+
+    # =========================================================================
+    # Operações Principais (Código do Windows preservado na íntegra)
+    # =========================================================================
     @staticmethod
     def decrypt_with_tpm(key_name: str, base64_ciphertext: str) -> bytes:
+        if sys.platform != "win32":
+            cipher_bytes = base64.b64decode(base64_ciphertext)
+            return SECryptoService._decrypt_with_linux_tpm(key_name, cipher_bytes)
+
         """
         Envia o texto cifrado para o Secure Element/TPM usando a API nativa em C do Windows.
         Retorna os bytes descriptografados brutos.
@@ -100,6 +267,71 @@ class SECryptoService:
 
         finally:
             # Garante que os ponteiros de memória em C sejam liberados, evitando Memory Leaks
+            if hKey:
+                ncrypt.NCryptFreeObject(hKey)
+            if hProv:
+                ncrypt.NCryptFreeObject(hProv)
+
+    @staticmethod
+    def sign_with_tpm(key_name: str, data: bytes) -> str:
+        if sys.platform != "win32":
+            return SECryptoService._sign_with_linux_tpm(key_name, data)
+
+        """
+        Assina os dados fornecidos utilizando a chave RSA armazenada no TPM/Secure Element (Windows CNG).
+        Retorna a assinatura em Base64.
+        """
+        hash_val = hashlib.sha256(data).digest()
+        hash_arr = (ctypes.c_ubyte * len(hash_val)).from_buffer_copy(hash_val)
+
+        hProv = ctypes.c_void_p()
+        hKey = ctypes.c_void_p()
+
+        try:
+            status = ncrypt.NCryptOpenStorageProvider(ctypes.byref(hProv), "Microsoft Platform Crypto Provider", 0)
+            if status != 0:
+                raise RuntimeError(f"Falha ao abrir TPM Provider: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            status = ncrypt.NCryptOpenKey(hProv, ctypes.byref(hKey), key_name, 0, 0)
+            if status != 0:
+                raise RuntimeError(f"Falha ao acessar chave '{key_name}': NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            pad_info = BCRYPT_PKCS1_PADDING_INFO("SHA256")
+            cbResult = wintypes.DWORD(0)
+
+            # 1. Mede o tamanho do buffer necessário
+            status = ncrypt.NCryptSignHash(
+                hKey,
+                ctypes.byref(pad_info),
+                hash_arr,
+                len(hash_val),
+                None,
+                0,
+                ctypes.byref(cbResult),
+                NCRYPT_PAD_PKCS1_FLAG
+            )
+            if status != 0:
+                raise RuntimeError(f"Falha ao medir tamanho da assinatura: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            sig_arr = (ctypes.c_ubyte * cbResult.value)()
+            # 2. Executa a assinatura de fato dentro do chip TPM
+            status = ncrypt.NCryptSignHash(
+                hKey,
+                ctypes.byref(pad_info),
+                hash_arr,
+                len(hash_val),
+                sig_arr,
+                cbResult.value,
+                ctypes.byref(cbResult),
+                NCRYPT_PAD_PKCS1_FLAG
+            )
+            if status != 0:
+                raise RuntimeError(f"Assinatura rejeitada pelo hardware TPM: NTSTATUS {hex(status & 0xFFFFFFFF)}")
+
+            sig_bytes = bytes(sig_arr[:cbResult.value])
+            return base64.b64encode(sig_bytes).decode('utf-8')
+
+        finally:
             if hKey:
                 ncrypt.NCryptFreeObject(hKey)
             if hProv:
@@ -188,68 +420,6 @@ class SECryptoService:
             "tag": base64.b64encode(tag).decode('utf-8')
         }
 
-    @staticmethod
-    def sign_with_tpm(key_name: str, data: bytes) -> str:
-        """
-        Assina os dados fornecidos utilizando a chave RSA armazenada no TPM/Secure Element (Windows CNG).
-        Retorna a assinatura em Base64.
-        """
-        hash_val = hashlib.sha256(data).digest()
-        hash_arr = (ctypes.c_ubyte * len(hash_val)).from_buffer_copy(hash_val)
-
-        hProv = ctypes.c_void_p()
-        hKey = ctypes.c_void_p()
-
-        try:
-            status = ncrypt.NCryptOpenStorageProvider(ctypes.byref(hProv), "Microsoft Platform Crypto Provider", 0)
-            if status != 0:
-                raise RuntimeError(f"Falha ao abrir TPM Provider: NTSTATUS {hex(status & 0xFFFFFFFF)}")
-
-            status = ncrypt.NCryptOpenKey(hProv, ctypes.byref(hKey), key_name, 0, 0)
-            if status != 0:
-                raise RuntimeError(f"Falha ao acessar chave '{key_name}': NTSTATUS {hex(status & 0xFFFFFFFF)}")
-
-            pad_info = BCRYPT_PKCS1_PADDING_INFO("SHA256")
-            cbResult = wintypes.DWORD(0)
-
-            # 1. Mede o tamanho do buffer necessário
-            status = ncrypt.NCryptSignHash(
-                hKey,
-                ctypes.byref(pad_info),
-                hash_arr,
-                len(hash_val),
-                None,
-                0,
-                ctypes.byref(cbResult),
-                NCRYPT_PAD_PKCS1_FLAG
-            )
-            if status != 0:
-                raise RuntimeError(f"Falha ao medir tamanho da assinatura: NTSTATUS {hex(status & 0xFFFFFFFF)}")
-
-            sig_arr = (ctypes.c_ubyte * cbResult.value)()
-            # 2. Executa a assinatura de fato dentro do chip TPM
-            status = ncrypt.NCryptSignHash(
-                hKey,
-                ctypes.byref(pad_info),
-                hash_arr,
-                len(hash_val),
-                sig_arr,
-                cbResult.value,
-                ctypes.byref(cbResult),
-                NCRYPT_PAD_PKCS1_FLAG
-            )
-            if status != 0:
-                raise RuntimeError(f"Assinatura rejeitada pelo hardware TPM: NTSTATUS {hex(status & 0xFFFFFFFF)}")
-
-            sig_bytes = bytes(sig_arr[:cbResult.value])
-            return base64.b64encode(sig_bytes).decode('utf-8')
-
-        finally:
-            if hKey:
-                ncrypt.NCryptFreeObject(hKey)
-            if hProv:
-                ncrypt.NCryptFreeObject(hProv)
-
     @classmethod
     def verify_signature(cls, public_key, data: bytes, signature_b64: str) -> bool:
         """
@@ -270,4 +440,3 @@ class SECryptoService:
             return True
         except Exception:
             return False
-

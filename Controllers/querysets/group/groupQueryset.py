@@ -7,6 +7,14 @@ class GroupQuerySet(models.QuerySet):
     Encapsula otimizações de query e buscas de grupos.
     """
 
+    @classmethod
+    def getBaseQueryset(cls):
+        """
+        Retorna o QuerySet base otimizado de grupos com permissões e contagens.
+        """
+        from django.contrib.auth.models import Group
+        return cls(model=Group).withDetails().defaultListOrder()
+
     def withDetails(self):
         """
         Otimiza a busca fazendo prefetch das permissões associadas e anotando a contagem de usuários.

@@ -17,7 +17,7 @@ class PermissionActions:
         """
         Retorna todas as permissões cadastradas no sistema ordenadas e com content_type otimizado.
         """
-        return PermissionQuerySet(model=Permission).withContentType().defaultListOrder()
+        return PermissionQuerySet.getBaseQueryset()
 
     @staticmethod
     def createCustomPermission(validated_data: dict) -> Permission:

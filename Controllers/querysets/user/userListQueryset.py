@@ -7,6 +7,14 @@ class UserListQuerySet(models.QuerySet):
     Encapsula lógica de busca e otimizações de banco.
     """
 
+    @classmethod
+    def getBaseQueryset(cls):
+        """
+        Retorna a query base já com as otimizações e ordenação padrão aplicadas.
+        """
+        from Domain.models.schemas.moderation.userSchema import User
+        return cls(model=User).withRoles().defaultListOrder()
+
     def withRoles(self):
         """
         Otimiza a query buscando os grupos (roles) via prefetch_related para evitar N+1.

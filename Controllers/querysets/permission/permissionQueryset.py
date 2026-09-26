@@ -6,6 +6,14 @@ class PermissionQuerySet(models.QuerySet):
     Encapsula buscas de permissões padrão e personalizadas no banco de dados.
     """
 
+    @classmethod
+    def getBaseQueryset(cls):
+        """
+        Retorna todas as permissões cadastradas no sistema ordenadas e com content_type otimizado.
+        """
+        from django.contrib.auth.models import Permission
+        return cls(model=Permission).withContentType().defaultListOrder()
+
     def withContentType(self):
         """
         Otimiza a query carregando o ContentType em JOIN (select_related).

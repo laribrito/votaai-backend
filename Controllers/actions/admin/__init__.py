@@ -1,3 +1,3 @@
-from .adminPreCadastroActions import AdminPreCadastroActions
+from .adminPreRegistrationActions import AdminPreRegistrationActions
 
-__all__ = ['AdminPreCadastroActions']
+__all__ = ['AdminPreRegistrationActions']

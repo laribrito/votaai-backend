@@ -2,92 +2,79 @@ from rest_framework import serializers
 
 class ElectionCreateSerializer(serializers.Serializer):
     """
-    Serializer para o cadastro de eleições via aplicação Desktop.
-    Recebe os dados da cédula, colégio eleitoral, chave pública da eleição,
-    keyHandle de hardware, assinatura da máquina física e datas opcionais.
+    Serializer for election registration via Desktop application.
+    Receives ballot data, electoral college, election public key,
+    hardware keyHandle, physical machine digital signature, and optional dates.
+    Accepts only English keys.
     """
-    titulo = serializers.CharField(
+    title = serializers.CharField(
         required=True,
         max_length=255,
-        error_messages={'required': 'O título da eleição é obrigatório.'}
+        error_messages={
+            'blank': 'The election title cannot be empty.',
+            'required': 'The election title is required.'
+        }
     )
-    cedula = serializers.JSONField(
+    ballot = serializers.JSONField(
         required=True,
-        error_messages={'required': 'A estrutura da cédula é obrigatória.'}
+        error_messages={
+            'required': 'The ballot structure is required.'
+        }
     )
-    colegiadoEleitoral = serializers.JSONField(
+    electoral_college = serializers.JSONField(
         required=True,
-        error_messages={'required': 'O colegiado eleitoral é obrigatório.'}
+        error_messages={
+            'required': 'The electoral college is required.'
+        }
     )
-    chavePublica = serializers.CharField(
+    public_key = serializers.CharField(
         required=True,
-        error_messages={'required': 'A chave pública da eleição é obrigatória.'}
+        error_messages={
+            'blank': 'The election public key cannot be empty.',
+            'required': 'The election public key is required.'
+        }
     )
-    keyHandle = serializers.CharField(
+    key_handle = serializers.CharField(
         required=True,
         max_length=255,
-        error_messages={'required': 'O handle da chave (keyHandle) é obrigatório.'}
+        error_messages={
+            'blank': 'The keyHandle cannot be empty.',
+            'required': 'The keyHandle is required.'
+        }
     )
-    assinatura = serializers.CharField(
+    signature = serializers.CharField(
         required=True,
-        error_messages={'required': 'A assinatura digital da máquina física é obrigatória.'}
+        error_messages={
+            'blank': 'The machine digital signature cannot be empty.',
+            'required': 'The machine digital signature is required.'
+        }
     )
-    dataHoraInicio = serializers.DateTimeField(
+    start_datetime = serializers.DateTimeField(
         required=False,
         default=None,
         allow_null=True,
-        help_text='Data e hora de início da eleição'
+        help_text='Start date and time of the election'
     )
-    dataHoraFim = serializers.DateTimeField(
+    end_datetime = serializers.DateTimeField(
         required=False,
         default=None,
         allow_null=True,
-        help_text='Data e hora de término da eleição'
+        help_text='End date and time of the election'
     )
-    chave_publica_maquina = serializers.CharField(
+    machine_public_key = serializers.CharField(
         required=False,
         default=None,
         allow_null=True,
-        help_text='Chave pública RSA da máquina física (opcional se já atrelada ao usuário ou enviada no envelope).'
+        help_text='RSA public key of the physical machine.'
     )
-
-    def to_internal_value(self, data):
-        mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
-
-        # Mapeamento para suportar camelCase e snake_case indistintamente
-        if 'colegiado_eleitoral' in mutable_data and 'colegiadoEleitoral' not in mutable_data:
-            mutable_data['colegiadoEleitoral'] = mutable_data['colegiado_eleitoral']
-
-        if 'chave_publica' in mutable_data and 'chavePublica' not in mutable_data:
-            mutable_data['chavePublica'] = mutable_data['chave_publica']
-
-        if 'key_handle' in mutable_data and 'keyHandle' not in mutable_data:
-            mutable_data['keyHandle'] = mutable_data['key_handle']
-
-        if 'signature' in mutable_data and 'assinatura' not in mutable_data:
-            mutable_data['assinatura'] = mutable_data['signature']
-
-        if 'data_hora_inicio' in mutable_data and 'dataHoraInicio' not in mutable_data:
-            mutable_data['dataHoraInicio'] = mutable_data['data_hora_inicio']
-
-        if 'data_hora_fim' in mutable_data and 'dataHoraFim' not in mutable_data:
-            mutable_data['dataHoraFim'] = mutable_data['data_hora_fim']
-
-        if 'chavePublicaMaquina' in mutable_data and 'chave_publica_maquina' not in mutable_data:
-            mutable_data['chave_publica_maquina'] = mutable_data['chavePublicaMaquina']
-
-        if 'machine_public_key' in mutable_data and 'chave_publica_maquina' not in mutable_data:
-            mutable_data['chave_publica_maquina'] = mutable_data['machine_public_key']
-
-        return super().to_internal_value(mutable_data)
 
 
 class ElectionCreateResponseSerializer(serializers.Serializer):
     """
-    Serializer de resposta da criação da eleição para o Desktop.
-    Retorna id da eleição, contagem de perguntas e opções, e assinatura digital do servidor.
+    Response serializer for election creation.
+    Returns election id, count of questions and options, and server digital signature.
     """
-    id = serializers.IntegerField(help_text='Identificador único da eleição criada')
-    qtdPerguntas = serializers.IntegerField(help_text='Quantidade total de perguntas da cédula')
-    qtdOpcoes = serializers.IntegerField(help_text='Quantidade total de opções de voto somando todas as perguntas')
-    assinatura = serializers.CharField(help_text='Assinatura digital gerada com o hardware TPM do servidor (VotaAI_SecureKey_1)')
+    id = serializers.IntegerField(help_text='Unique identifier of the created election')
+    questions_count = serializers.IntegerField(help_text='Total count of questions in the ballot')
+    options_count = serializers.IntegerField(help_text='Total count of voting options across all questions')
+    signature = serializers.CharField(help_text='Server digital signature generated with TPM hardware key (VotaAI_SecureKey_1)')
