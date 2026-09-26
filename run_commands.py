@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import os
+import json
 
 # Garante que o GitHub CLI (gh) esteja no PATH caso esteja instalado nos locais padrao
 GH_PATHS = [
@@ -98,13 +99,75 @@ def sync_main():
     run_command("git fetch origin", "Buscando atualizações do repositório remoto")
     run_command("git merge origin/main", "Mesclando origin/main na branch atual para resolver conflitos")
 
+def fetch_pr_comments(pr_target=None, save_to_file=False):
+    print("\n=== OBTENDO COMENTÁRIOS E REVISÕES DO PULL REQUEST ===")
+
+    target_arg = f'"{pr_target}"' if pr_target and not pr_target.startswith("--") else ""
+
+    safe_print("[>] Buscando detalhes e comentários gerais com o GitHub CLI...")
+    cmd_view = f"gh pr view {target_arg} --comments"
+    res_view = subprocess.run(cmd_view, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+
+    if res_view.returncode != 0:
+        safe_print("[-] Não foi possível obter os dados do PR via GitHub CLI.")
+        safe_print("    Certifique-se de que o gh está autenticado (`gh auth login`) e que existe um PR aberto para a branch atual.")
+        if res_view.stderr:
+            safe_print(f"    Detalhes: {res_view.stderr.strip()}")
+        return
+
+    # Tenta obter comentários de revisão inline (code review por linha de código)
+    cmd_info = f"gh pr view {target_arg} --json number,title,url"
+    res_info = subprocess.run(cmd_info, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+    
+    review_comments_section = ""
+    pr_title = ""
+    pr_url = ""
+
+    if res_info.returncode == 0:
+        try:
+            info = json.loads(res_info.stdout)
+            pr_num = info.get("number")
+            pr_title = info.get("title", "")
+            pr_url = info.get("url", "")
+
+            if pr_num:
+                cmd_reviews = f"gh api repos/:owner/:repo/pulls/{pr_num}/comments"
+                res_reviews = subprocess.run(cmd_reviews, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+                if res_reviews.returncode == 0 and res_reviews.stdout.strip():
+                    reviews = json.loads(res_reviews.stdout)
+                    if reviews:
+                        review_comments_section += f"\n{'='*60}\n"
+                        review_comments_section += f"=== COMENTÁRIOS DE CODE REVIEW INLINE ({len(reviews)}) ===\n"
+                        for r in reviews:
+                            path = r.get("path", "arquivo")
+                            line = r.get("line") or r.get("original_line") or "?"
+                            author = r.get("user", {}).get("login", "desconhecido")
+                            body = r.get("body", "").strip()
+                            review_comments_section += f"\n📁 {path}:{line} — @{author}:\n   {body.replace(chr(10), chr(10) + '   ')}\n"
+        except Exception:
+            pass
+
+    full_output = res_view.stdout.strip()
+    if review_comments_section:
+        full_output += "\n" + review_comments_section
+
+    safe_print("\n" + full_output)
+
+    if save_to_file:
+        filename = "PR_COMMENTS.md"
+        with open(filename, "w", encoding="utf-8") as f:
+            header = f"# PR Comments: {pr_title}\nURL: {pr_url}\n\n" if pr_title else ""
+            f.write(header + full_output + "\n")
+        safe_print(f"\n[+] Comentários exportados com sucesso para o arquivo '{filename}'!")
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ["pre", "pr", "sync", "clean"]:
-        print("Uso: python run_commands.py [pre|pr|sync|clean] [--web]")
-        print("  pre   - Executa testes automatizados do Django e checa status do repositório")
-        print("  pr    - Cria um Pull Request no GitHub de forma automática com os commits (use --web para abrir no navegador)")
-        print("  clean - Volta para a main, atualiza e deleta a branch local mesclada")
-        print("  sync  - Busca atualizações da main e tenta mesclar localmente para resolver conflitos")
+    if len(sys.argv) < 2 or sys.argv[1] not in ["pre", "pr", "sync", "clean", "comments"]:
+        print("Uso: python run_commands.py [pre|pr|sync|clean|comments] [opcoes]")
+        print("  pre      - Executa testes automatizados do Django e checa status do repositório")
+        print("  pr       - Cria um Pull Request no GitHub de forma automática com os commits (use --web para abrir no navegador)")
+        print("  clean    - Volta para a main, atualiza e deleta a branch local mesclada")
+        print("  sync     - Busca atualizações da main e tenta mesclar localmente para resolver conflitos")
+        print("  comments - Puxa e exibe comentários e revisões de código do PR via GitHub CLI (use [numero_pr] e/ou --save)")
         sys.exit(1)
         
     action = sys.argv[1]
@@ -117,3 +180,11 @@ if __name__ == "__main__":
         sync_main()
     elif action == "clean":
         cleanup_git()
+    elif action == "comments":
+        save_file = "--save" in sys.argv
+        target = None
+        for arg in sys.argv[2:]:
+            if not arg.startswith("--"):
+                target = arg
+                break
+        fetch_pr_comments(pr_target=target, save_to_file=save_file)
