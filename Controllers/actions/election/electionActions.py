@@ -3,7 +3,7 @@ import logging
 from django.db import transaction
 from django.contrib.auth.hashers import make_password
 from rest_framework.exceptions import ValidationError
-
+from django.utils.translation import gettext_lazy as _
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
@@ -30,25 +30,25 @@ class ElectionActions:
         if isinstance(ballot_data, list):
             questions = ballot_data
         elif isinstance(ballot_data, dict):
-            questions = ballot_data.get('questions') or ballot_data.get('perguntas', [])
+            questions = ballot_data.get('questions', [])
         else:
             questions = []
 
         if not isinstance(questions, list) or len(questions) == 0:
-            raise ValidationError({"ballot": "The ballot must contain at least one question."})
+            raise ValidationError({"ballot": _("The ballot must contain at least one question.")})
 
         questions_count = len(questions)
         options_count = 0
 
         for idx, q in enumerate(questions):
             if not isinstance(q, dict):
-                raise ValidationError({"ballot": f"Question at index {idx} must be a JSON object."})
+                raise ValidationError({"ballot": _("Question at index %(idx)s must be a JSON object.") % {'idx': idx}})
 
-            options = q.get('options') or q.get('opcoes') or q.get('alternativas')
+            options = q.get('options')
             if not isinstance(options, list) or len(options) == 0:
-                q_name = q.get('question') or q.get('pergunta') or q.get('titulo') or q.get('enunciado') or str(idx + 1)
+                q_name = q.get('question') or str(idx + 1)
                 raise ValidationError({
-                    "ballot": f"Question '{q_name}' must contain at least one option."
+                    "ballot": _("Question '%(q_name)s' must contain at least one option.") % {'q_name': q_name}
                 })
             options_count += len(options)
 
@@ -63,61 +63,27 @@ class ElectionActions:
         - Creates ElectoralCollege records
         - Signs response payload with server TPM (VotaAI_SecureKey_1)
         """
-        title = str(data.get('title') or data.get('titulo') or '').strip()
-        ballot = data.get('ballot') if data.get('ballot') is not None else data.get('cedula')
-        electoral_college = (
-            data.get('electoral_college')
-            or data.get('electoralCollege')
-            or data.get('colegiadoEleitoral')
-            or data.get('colegiado_eleitoral')
-        )
-        public_key = str(
-            data.get('public_key')
-            or data.get('publicKey')
-            or data.get('chavePublica')
-            or data.get('chave_publica')
-            or ''
-        ).strip()
-        key_handle = str(
-            data.get('key_handle')
-            or data.get('keyHandle')
-            or ''
-        ).strip()
-        machine_signature = str(
-            data.get('signature')
-            or data.get('machine_signature')
-            or data.get('assinatura')
-            or ''
-        ).strip()
-        start_datetime = (
-            data.get('start_datetime')
-            or data.get('startDatetime')
-            or data.get('start_date')
-            or data.get('startDate')
-            or data.get('dataHoraInicio')
-            or data.get('data_hora_inicio')
-        )
-        end_datetime = (
-            data.get('end_datetime')
-            or data.get('endDatetime')
-            or data.get('end_date')
-            or data.get('endDate')
-            or data.get('dataHoraFim')
-            or data.get('data_hora_fim')
-        )
+        title = str(data.get('title') or '').strip()
+        ballot = data.get('ballot')
+        electoral_college = data.get('electoral_college')
+        public_key = str(data.get('public_key') or '').strip()
+        key_handle = str(data.get('key_handle') or '').strip()
+        machine_signature = str(data.get('signature') or '').strip()
+        start_datetime = data.get('start_datetime')
+        end_datetime = data.get('end_datetime')
 
         if not title:
-            raise ValidationError({"title": "The election title is required."})
+            raise ValidationError({"title": _("The election title is required.")})
         if ballot is None:
-            raise ValidationError({"ballot": "The ballot structure is required."})
+            raise ValidationError({"ballot": _("The ballot structure is required.")})
         if electoral_college is None:
-            raise ValidationError({"electoral_college": "The electoral college is required."})
+            raise ValidationError({"electoral_college": _("The electoral college is required.")})
         if not public_key:
-            raise ValidationError({"public_key": "The election public key is required."})
+            raise ValidationError({"public_key": _("The election public key is required.")})
         if not key_handle:
-            raise ValidationError({"key_handle": "The keyHandle is required."})
+            raise ValidationError({"key_handle": _("The keyHandle is required.")})
         if not machine_signature:
-            raise ValidationError({"signature": "The machine digital signature is required."})
+            raise ValidationError({"signature": _("The machine digital signature is required.")})
 
         # 1. Validate ballot structure and compute counts
         questions_raw, questions_count, options_count = cls._extract_questions_and_options(ballot)
@@ -129,9 +95,7 @@ class ElectionActions:
         
         if not machine_pub_key:
             machine_pub_key = (
-                data.get('chave_publica_maquina')
-                or data.get('machine_public_key')
-                or data.get('client_public_key')
+                data.get('machine_public_key')
                 or client_pub_key_fallback
             )
 
@@ -145,7 +109,7 @@ class ElectionActions:
 
         if not machine_pub_key:
             raise ValidationError({
-                "signature": "Physical machine public key not found to validate signature."
+                "signature": _("Physical machine public key not found to validate signature.")
             })
 
         # 3. Validate digital signature generated by the client machine
@@ -156,27 +120,6 @@ class ElectionActions:
             f"{title}:{public_key}:{key_handle}".encode('utf-8'),
             f"{title}:{key_handle}".encode('utf-8'),
             f"{title}:{ballot_repr}:{college_repr}:{public_key}:{key_handle}".encode('utf-8'),
-            json.dumps({
-                "chavePublica": public_key,
-                "colegiadoEleitoral": electoral_college,
-                "cedula": ballot,
-                "keyHandle": key_handle,
-                "titulo": title
-            }, sort_keys=True).encode('utf-8'),
-            json.dumps({
-                "chave_publica": public_key,
-                "colegiado_eleitoral": electoral_college,
-                "cedula": ballot,
-                "key_handle": key_handle,
-                "titulo": title
-            }, sort_keys=True).encode('utf-8'),
-            json.dumps({
-                "publicKey": public_key,
-                "electoralCollege": electoral_college,
-                "ballot": ballot,
-                "keyHandle": key_handle,
-                "title": title
-            }, sort_keys=True).encode('utf-8'),
             json.dumps({
                 "public_key": public_key,
                 "electoral_college": electoral_college,
@@ -194,7 +137,7 @@ class ElectionActions:
 
         if not is_valid_sig:
             raise ValidationError({
-                "signature": "Physical machine signature is invalid or payload does not match."
+                "signature": _("Physical machine signature is invalid or payload does not match.")
             })
 
         # 4. Atomic creation in normalized relational tables
@@ -212,14 +155,8 @@ class ElectionActions:
 
             # Persist Question and child Option records
             for idx, q_data in enumerate(questions_raw):
-                question_text = (
-                    q_data.get('question')
-                    or q_data.get('pergunta')
-                    or q_data.get('titulo')
-                    or q_data.get('enunciado')
-                    or f"Question {idx + 1}"
-                )
-                order = q_data.get('order') or q_data.get('ordem') or (idx + 1)
+                question_text = q_data.get('question') or f"Question {idx + 1}"
+                order = q_data.get('order') or (idx + 1)
 
                 question_obj = Question.objects.create(
                     election=election,
@@ -227,11 +164,11 @@ class ElectionActions:
                     order=order
                 )
 
-                options_raw = q_data.get('options') or q_data.get('opcoes') or q_data.get('alternativas') or []
+                options_raw = q_data.get('options') or []
                 options_objs = []
                 for opt in options_raw:
                     if isinstance(opt, dict):
-                        label = opt.get('label') or opt.get('nome') or opt.get('texto') or str(opt)
+                        label = opt.get('label') or str(opt)
                     else:
                         label = str(opt)
                     options_objs.append(Option(question=question_obj, label=label))
@@ -246,19 +183,15 @@ class ElectionActions:
                 if isinstance(voter, dict):
                     email = (voter.get('email') or '').strip()
                     full_name = (
-                        voter.get('fullName')
-                        or voter.get('full_name')
-                        or voter.get('nomeCompleto')
-                        or voter.get('nome_completo')
-                        or voter.get('nome')
+                        voter.get('full_name')
                         or email.split('@')[0]
                     ).strip()
                     parts = full_name.split()
                     first_name = parts[0] if parts else ''
-                    nickname = (voter.get('nickname') or voter.get('apelido') or first_name).strip()
+                    nickname = (voter.get('nickname') or first_name).strip()
                     if not nickname:
                         nickname = first_name
-                    raw_pw = voter.get('password') or voter.get('senha') or ''
+                    raw_pw = voter.get('password') or ''
                     if raw_pw:
                         if str(raw_pw).startswith(('pbkdf2_sha256$', 'argon2', 'bcrypt')):
                             password_hash = str(raw_pw)
@@ -293,14 +226,11 @@ class ElectionActions:
             server_signature = SECryptoService.sign_with_tpm('VotaAI_SecureKey_1', data_to_sign)
         except Exception as e:
             logger.error(f"Erro ao assinar resposta com TPM: {e}")
-            raise RuntimeError(f"Erro ao gerar assinatura digital da aplicação servidor: {str(e)}")
+            raise RuntimeError(_("Error generating server digital signature: %(error)s") % {'error': str(e)})
 
         return {
             "id": election.id,
             "questions_count": questions_count,
             "options_count": options_count,
-            "signature": server_signature,
-            "qtdPerguntas": questions_count,
-            "qtdOpcoes": options_count,
-            "assinatura": server_signature
+            "signature": server_signature
         }

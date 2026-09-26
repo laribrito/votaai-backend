@@ -261,29 +261,3 @@ class AuthLoginTests(APITestCase):
         self.assertIn("user", resp_data)
         self.assertEqual(resp_data["user"]["email"], self.regular_email)
 
-    def test_login_success_with_english_field_aliases(self):
-        totp_code = TOTPService.generate_totp(self.totp_secret)
-        payload_to_sign = f"{self.admin_email}:{totp_code}".encode('utf-8')
-        signature_bytes = self.machine_private_key.sign(
-            payload_to_sign,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature_b64 = base64.b64encode(signature_bytes).decode('utf-8')
-
-        # Envia usando apenas aliases em inglês (email, password, totp, signature, device_id)
-        payload = {
-            "email": self.admin_email,
-            "password": self.password,
-            "totp": totp_code,
-            "signature": signature_b64,
-            "device_id": self.device_id
-        }
-
-        enc_req = self._encrypt_request_body(payload)
-        response = self.client.post(self.url_login, enc_req, format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        resp_data = self._decrypt_response_body(response)
-        self.assertIn("token", resp_data)
-        self.assertEqual(resp_data["user"]["email"], self.admin_email)

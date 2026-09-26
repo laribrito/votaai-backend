@@ -43,25 +43,6 @@ class LoginSerializer(serializers.Serializer):
         help_text="Unique hardware machine identifier."
     )
 
-    def to_internal_value(self, data):
-        mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
-
-        # English aliases only
-        if 'email' in mutable_data and 'username' not in mutable_data:
-            mutable_data['username'] = mutable_data['email']
-        if 'totp' in mutable_data and 'totp_code' not in mutable_data:
-            mutable_data['totp_code'] = mutable_data['totp']
-        if 'totpCode' in mutable_data and 'totp_code' not in mutable_data:
-            mutable_data['totp_code'] = mutable_data['totpCode']
-        if 'device_id' in mutable_data and 'machine_user' not in mutable_data:
-            mutable_data['machine_user'] = mutable_data['device_id']
-        if 'deviceId' in mutable_data and 'machine_user' not in mutable_data:
-            mutable_data['machine_user'] = mutable_data['deviceId']
-        if 'machineUser' in mutable_data and 'machine_user' not in mutable_data:
-            mutable_data['machine_user'] = mutable_data['machineUser']
-
-        return super().to_internal_value(mutable_data)
-
 class LoginUserSerializer(serializers.ModelSerializer):
     """
     Schema to format the User object inside the login response.

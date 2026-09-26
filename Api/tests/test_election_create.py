@@ -133,24 +133,24 @@ class ElectionCreateTests(APITestCase):
         chave_publica_eleicao = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQE..."
         key_handle = "0x81010002"
         colegiado = [
-            {"email": "eleitor1@votaai.org", "nome": "Eleitor Um", "senha": "SenhaDoEleitor123!"},
-            {"email": "eleitor2@votaai.org", "nome": "Eleitor Dois"},
-            {"email": "eleitor3@votaai.org", "nome": "Eleitor Três"}
+            {"email": "eleitor1@votaai.org", "full_name": "Eleitor Um", "password": "SenhaDoEleitor123!"},
+            {"email": "eleitor2@votaai.org", "full_name": "Eleitor Dois"},
+            {"email": "eleitor3@votaai.org", "full_name": "Eleitor Três"}
         ]
         cedula = [
             {
-                "titulo": "Escolha o Presidente",
-                "opcoes": [
-                    {"nome": "Chapa 1 - Inovação"},
-                    {"nome": "Chapa 2 - Renovação"},
-                    {"nome": "Branco / Nulo"}
+                "question": "Escolha o Presidente",
+                "options": [
+                    {"label": "Chapa 1 - Inovação"},
+                    {"label": "Chapa 2 - Renovação"},
+                    {"label": "Branco / Nulo"}
                 ]
             },
             {
-                "titulo": "Aprova as novas contas?",
-                "opcoes": [
-                    {"nome": "Sim"},
-                    {"nome": "Não"}
+                "question": "Aprova as novas contas?",
+                "options": [
+                    {"label": "Sim"},
+                    {"label": "Não"}
                 ]
             }
         ]
@@ -305,45 +305,4 @@ class ElectionCreateTests(APITestCase):
         decrypted_response = self._decrypt_response_body(response)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("ballot", decrypted_response)
-
-    def test_create_election_with_english_fields_success(self):
-        """Valida a criação de eleição enviando todos os campos em inglês (payload Desktop)."""
-        title = "2026 Student Council Election"
-        public_key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQE..."
-        key_handle = "0x81010099"
-        electoral_college = [
-            {"email": "voter1@votaai.org", "name": "Voter One", "password": "VoterPass123!"},
-            {"email": "voter2@votaai.org", "name": "Voter Two"}
-        ]
-        ballot = [
-            {
-                "question": "Choose the Representative",
-                "options": [
-                    {"label": "Candidate Alpha"},
-                    {"label": "Candidate Beta"}
-                ]
-            }
-        ]
-
-        payload_to_sign = f"{title}:{public_key}:{key_handle}".encode('utf-8')
-        signature = self._sign_with_machine_key(payload_to_sign)
-
-        req_payload = {
-            "title": title,
-            "ballot": ballot,
-            "electoralCollege": electoral_college,
-            "publicKey": public_key,
-            "keyHandle": key_handle,
-            "signature": signature,
-            "machine_public_key": self.machine_public_pem
-        }
-
-        encrypted_body = self._encrypt_request_body(req_payload)
-        response = self.client.post(self.url_create, data=encrypted_body, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        decrypted_response = self._decrypt_response_body(response)
-        self.assertIn("id", decrypted_response)
-        self.assertEqual(decrypted_response["qtdPerguntas"], 1)
-        self.assertEqual(decrypted_response["qtdOpcoes"], 2)
 

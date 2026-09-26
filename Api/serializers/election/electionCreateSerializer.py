@@ -68,40 +68,6 @@ class ElectionCreateSerializer(serializers.Serializer):
         help_text='RSA public key of the physical machine.'
     )
 
-    def to_internal_value(self, data):
-        mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
-
-        # English aliases only (camelCase / snake_case)
-        if 'electoralCollege' in mutable_data and 'electoral_college' not in mutable_data:
-            mutable_data['electoral_college'] = mutable_data['electoralCollege']
-
-        if 'publicKey' in mutable_data and 'public_key' not in mutable_data:
-            mutable_data['public_key'] = mutable_data['publicKey']
-
-        if 'keyHandle' in mutable_data and 'key_handle' not in mutable_data:
-            mutable_data['key_handle'] = mutable_data['keyHandle']
-
-        if 'startDatetime' in mutable_data and 'start_datetime' not in mutable_data:
-            mutable_data['start_datetime'] = mutable_data['startDatetime']
-        elif 'startDate' in mutable_data and 'start_datetime' not in mutable_data:
-            mutable_data['start_datetime'] = mutable_data['startDate']
-        elif 'start_date' in mutable_data and 'start_datetime' not in mutable_data:
-            mutable_data['start_datetime'] = mutable_data['start_date']
-
-        if 'endDatetime' in mutable_data and 'end_datetime' not in mutable_data:
-            mutable_data['end_datetime'] = mutable_data['endDatetime']
-        elif 'endDate' in mutable_data and 'end_datetime' not in mutable_data:
-            mutable_data['end_datetime'] = mutable_data['endDate']
-        elif 'end_date' in mutable_data and 'end_datetime' not in mutable_data:
-            mutable_data['end_datetime'] = mutable_data['end_date']
-
-        if 'machinePublicKey' in mutable_data and 'machine_public_key' not in mutable_data:
-            mutable_data['machine_public_key'] = mutable_data['machinePublicKey']
-        elif 'client_public_key' in mutable_data and 'machine_public_key' not in mutable_data:
-            mutable_data['machine_public_key'] = mutable_data['client_public_key']
-
-        return super().to_internal_value(mutable_data)
-
 
 class ElectionCreateResponseSerializer(serializers.Serializer):
     """
