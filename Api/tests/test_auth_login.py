@@ -136,14 +136,14 @@ class AuthLoginTests(APITestCase):
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        assinatura = base64.b64encode(signature_bytes).decode('utf-8')
+        signature = base64.b64encode(signature_bytes).decode('utf-8')
 
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "codigo_totp": totp_code,
-            "assinatura": assinatura,
-            "usuario_maquina": self.device_id
+            "totp_code": totp_code,
+            "signature": signature,
+            "machine_user": self.device_id
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -163,14 +163,14 @@ class AuthLoginTests(APITestCase):
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        assinatura = base64.b64encode(signature_bytes).decode('utf-8')
+        signature = base64.b64encode(signature_bytes).decode('utf-8')
 
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "codigo_totp": invalid_totp,
-            "assinatura": assinatura,
-            "usuario_maquina": self.device_id
+            "totp_code": invalid_totp,
+            "signature": signature,
+            "machine_user": self.device_id
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -178,13 +178,13 @@ class AuthLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("codigo_totp", resp_data)
+        self.assertIn("totp_code", resp_data)
 
     def test_login_fails_with_missing_totp_when_required(self):
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "usuario_maquina": self.device_id
+            "machine_user": self.device_id
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -192,7 +192,7 @@ class AuthLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("codigo_totp", resp_data)
+        self.assertIn("totp_code", resp_data)
 
     def test_login_fails_with_invalid_signature(self):
         totp_code = TOTPService.generate_totp(self.totp_secret)
@@ -204,14 +204,14 @@ class AuthLoginTests(APITestCase):
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        assinatura = base64.b64encode(signature_bytes).decode('utf-8')
+        signature = base64.b64encode(signature_bytes).decode('utf-8')
 
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "codigo_totp": totp_code,
-            "assinatura": assinatura,
-            "usuario_maquina": self.device_id
+            "totp_code": totp_code,
+            "signature": signature,
+            "machine_user": self.device_id
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -219,7 +219,7 @@ class AuthLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("assinatura", resp_data)
+        self.assertIn("signature", resp_data)
 
     def test_login_fails_with_unauthorized_machine(self):
         totp_code = TOTPService.generate_totp(self.totp_secret)
@@ -229,14 +229,14 @@ class AuthLoginTests(APITestCase):
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        assinatura = base64.b64encode(signature_bytes).decode('utf-8')
+        signature = base64.b64encode(signature_bytes).decode('utf-8')
 
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "codigo_totp": totp_code,
-            "assinatura": assinatura,
-            "usuario_maquina": "rogue-unauthorized-machine-id"
+            "totp_code": totp_code,
+            "signature": signature,
+            "machine_user": "rogue-unauthorized-machine-id"
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -244,7 +244,7 @@ class AuthLoginTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("usuario_maquina", resp_data)
+        self.assertIn("machine_user", resp_data)
 
     def test_login_regular_user_without_totp_succeeds(self):
         payload = {
@@ -260,3 +260,30 @@ class AuthLoginTests(APITestCase):
         self.assertIn("token", resp_data)
         self.assertIn("user", resp_data)
         self.assertEqual(resp_data["user"]["email"], self.regular_email)
+
+    def test_login_success_with_english_field_aliases(self):
+        totp_code = TOTPService.generate_totp(self.totp_secret)
+        payload_to_sign = f"{self.admin_email}:{totp_code}".encode('utf-8')
+        signature_bytes = self.machine_private_key.sign(
+            payload_to_sign,
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        signature_b64 = base64.b64encode(signature_bytes).decode('utf-8')
+
+        # Envia usando apenas aliases em inglês (email, password, totp, signature, device_id)
+        payload = {
+            "email": self.admin_email,
+            "password": self.password,
+            "totp": totp_code,
+            "signature": signature_b64,
+            "device_id": self.device_id
+        }
+
+        enc_req = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_login, enc_req, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("token", resp_data)
+        self.assertEqual(resp_data["user"]["email"], self.admin_email)
