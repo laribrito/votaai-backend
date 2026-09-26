@@ -117,6 +117,45 @@ Django Admin: `http://localhost:8000/admin/`
 
 ---
 
+## 🔒 Configuração do Hardware de Segurança (TPM 2.0 / Secure Element)
+
+O projeto utiliza **criptografia baseada em hardware (TPM 2.0)** para operações criptográficas seguras (descriptografia do envelope e assinatura digital).
+
+### 🐧 Configuração no Linux (Ubuntu / Zorin / Debian)
+
+1. **Instale os utilitários do TPM 2.0 no sistema:**
+   ```bash
+   sudo apt update && sudo apt install -y tpm2-tools
+   ```
+
+2. **Permita acesso ao dispositivo do TPM (`/dev/tpmrm0`):**
+   ```bash
+   sudo usermod -aG tss $USER
+   ```
+   > 💡 *Para aplicar permissão imediata no terminal atual:*
+   > ```bash
+   > sudo chmod 666 /dev/tpmrm0
+   > ```
+
+3. **Gere as chaves criptográficas no chip TPM:**
+   ```bash
+   python manage.py generate_se_keys
+   ```
+
+---
+
+### 🪟 Configuração no Windows
+
+1. Certifique-se de que o TPM 2.0 está habilitado no Windows Defender / Segurança do Dispositivo.
+2. Execute a geração de chaves via PowerShell / CNG:
+   ```powershell
+   python manage.py generate_se_keys
+   ```
+
+As informações das chaves públicas geradas no hardware serão salvas no arquivo `se_keys_info.json`.
+
+---
+
 ## 🧱 Estendendo o Template
 
 ### Adicionando um novo módulo de domínio
