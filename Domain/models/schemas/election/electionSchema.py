@@ -3,7 +3,6 @@ from django.utils.translation import gettext_lazy as _
 from Core.schemaMixins.timestampSchemaMixin import TimestampSchemaMixin
 from Domain.models.proxies.election.electionProxy import ElectionProxy
 
-
 class ElectionStatus(models.TextChoices):
     CREATED = 'CREATED', _('Created')
     STARTED = 'STARTED', _('Started')
