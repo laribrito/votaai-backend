@@ -1,3 +1,3 @@
-from .adminPreCadastroView import AdminPreCadastroViewSet
+from .adminPreRegistrationView import AdminPreRegistrationViewSet
 
-__all__ = ['AdminPreCadastroViewSet']
+__all__ = ['AdminPreRegistrationViewSet']

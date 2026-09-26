@@ -16,7 +16,7 @@ from Domain.models.groupChoices import GroupRoles
 from Infrastructure.services.totpService import TOTPService
 from Infrastructure.services.seCryptoService import SECryptoService
 
-class AdminPreCadastroTests(APITestCase):
+class AdminPreRegistrationTests(APITestCase):
     def setUp(self):
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
@@ -49,8 +49,8 @@ class AdminPreCadastroTests(APITestCase):
         ).decode('utf-8')
 
         self.device_id = "dev-test-suite-machine"
-        self.url_iniciar = reverse('admin-pre-cadastro-iniciar')
-        self.url_confirmar = reverse('admin-pre-cadastro-confirmar')
+        self.url_start = reverse('admin-pre-registration-start')
+        self.url_confirm = reverse('admin-pre-registration-confirm')
 
     def tearDown(self):
         if os.path.exists(self.client_key_file):
@@ -60,7 +60,7 @@ class AdminPreCadastroTests(APITestCase):
         """Helper para simular o cliente Desktop cifrando a requisição com a chave do TPM do servidor."""
         payload_copy = dict(payload_dict)
         omit_machine = payload_copy.pop('_omit_machine_user', False)
-        if not omit_machine and 'machine_user' not in payload_copy and 'usuario_maquina' not in payload_copy and 'codigo_totp' not in payload_copy:
+        if not omit_machine and 'machine_user' not in payload_copy and 'totp_code' not in payload_copy:
             payload_copy['machine_user'] = self.device_id
 
         json_bytes = json.dumps(payload_copy).encode('utf-8')
@@ -106,7 +106,7 @@ class AdminPreCadastroTests(APITestCase):
         decrypted_bytes = aesgcm.decrypt(iv, ciphertext + tag, None)
         return json.loads(decrypted_bytes.decode('utf-8'))
 
-    def test_full_admin_pre_cadastro_flow_success(self):
+    def test_full_admin_pre_registration_flow_success(self):
         """
         Testa o fluxo completo de pré-cadastro e confirmação conforme o diagrama de sequência:
         1. Desktop -> API: email, senha, chave_publica_maquina (cifrado)
@@ -122,26 +122,26 @@ class AdminPreCadastroTests(APITestCase):
         # -------------------------------------------------------------
         req_step1 = {
             "email": admin_email,
-            "senha": admin_pass,
-            "chave_publica_maquina": self.machine_public_pem
+            "password": admin_pass,
+            "machine_public_key": self.machine_public_pem
         }
         body_step1 = self._encrypt_request_body(req_step1)
-        response_step1 = self.client.post(self.url_iniciar, data=body_step1, format='json')
+        response_step1 = self.client.post(self.url_start, data=body_step1, format='json')
         self.assertEqual(response_step1.status_code, status.HTTP_200_OK)
 
         resp_step2 = self._decrypt_response_body(response_step1)
-        self.assertIn("mensagem", resp_step2)
-        self.assertIn("uri_provisionamento", resp_step2)
-        self.assertIn("assinatura", resp_step2)
+        self.assertIn("message", resp_step2)
+        self.assertIn("provisioning_uri", resp_step2)
+        self.assertIn("signature", resp_step2)
 
         # Valida a assinatura digital do TPM do servidor
-        uri_provisionamento = resp_step2["uri_provisionamento"]
-        mensagem_step2 = resp_step2["mensagem"]
-        data_signed_by_server = f"{mensagem_step2}:{uri_provisionamento}".encode('utf-8')
+        provisioning_uri = resp_step2["provisioning_uri"]
+        message_step2 = resp_step2["message"]
+        data_signed_by_server = f"{message_step2}:{provisioning_uri}".encode('utf-8')
         server_sig_valid = SECryptoService.verify_signature(
             self.backend_public_key,
             data_signed_by_server,
-            resp_step2["assinatura"]
+            resp_step2["signature"]
         )
         self.assertTrue(server_sig_valid, "Assinatura do servidor no passo 2 é inválida!")
 
@@ -149,7 +149,7 @@ class AdminPreCadastroTests(APITestCase):
         user = User.objects.filter(email=admin_email).first()
         self.assertIsNotNone(user)
         self.assertFalse(user.is_active, "Usuário deveria estar inativo até a confirmação TOTP.")
-        self.assertEqual(user.chave_publica_maquina, self.machine_public_pem.strip())
+        self.assertEqual(user.machine_public_key, self.machine_public_pem.strip())
         self.assertIsNotNone(user.totp_secret)
 
         # -------------------------------------------------------------
@@ -169,23 +169,23 @@ class AdminPreCadastroTests(APITestCase):
 
         req_step3 = {
             "email": admin_email,
-            "codigo_totp": totp_code,
-            "assinatura": machine_signature_b64
+            "totp_code": totp_code,
+            "signature": machine_signature_b64
         }
         body_step3 = self._encrypt_request_body(req_step3)
-        response_step3 = self.client.post(self.url_confirmar, data=body_step3, format='json')
+        response_step3 = self.client.post(self.url_confirm, data=body_step3, format='json')
         self.assertEqual(response_step3.status_code, status.HTTP_200_OK)
 
         resp_step4 = self._decrypt_response_body(response_step3)
-        self.assertIn("mensagem", resp_step4)
-        self.assertIn("assinatura", resp_step4)
+        self.assertIn("message", resp_step4)
+        self.assertIn("signature", resp_step4)
 
         # Valida a assinatura digital do servidor no passo 4
-        mensagem_step4 = resp_step4["mensagem"]
+        message_step4 = resp_step4["message"]
         server_sig_valid_step4 = SECryptoService.verify_signature(
             self.backend_public_key,
-            mensagem_step4.encode('utf-8'),
-            resp_step4["assinatura"]
+            message_step4.encode('utf-8'),
+            resp_step4["signature"]
         )
         self.assertTrue(server_sig_valid_step4, "Assinatura do servidor no passo 4 é inválida!")
 
@@ -199,10 +199,10 @@ class AdminPreCadastroTests(APITestCase):
         admin_email = "admin.totpfail@votaai.org"
         req_step1 = {
             "email": admin_email,
-            "senha": "SenhaValida123!",
-            "chave_publica_maquina": self.machine_public_pem
+            "password": "SenhaValida123!",
+            "machine_public_key": self.machine_public_pem
         }
-        self.client.post(self.url_iniciar, data=self._encrypt_request_body(req_step1), format='json')
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
 
         user = User.objects.get(email=admin_email)
         invalid_totp = "000000"
@@ -212,24 +212,24 @@ class AdminPreCadastroTests(APITestCase):
 
         req_step3 = {
             "email": admin_email,
-            "codigo_totp": invalid_totp,
-            "assinatura": base64.b64encode(sig_bytes).decode('utf-8')
+            "totp_code": invalid_totp,
+            "signature": base64.b64encode(sig_bytes).decode('utf-8')
         }
-        response = self.client.post(self.url_confirmar, data=self._encrypt_request_body(req_step3), format='json')
+        response = self.client.post(self.url_confirm, data=self._encrypt_request_body(req_step3), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("codigo_totp", resp_data)
+        self.assertIn("totp_code", resp_data)
 
     def test_confirm_with_invalid_machine_signature_fails(self):
         """Valida que assinatura da máquina forjada/inválida rejeita a confirmação com erro 400."""
         admin_email = "admin.sigfail@votaai.org"
         req_step1 = {
             "email": admin_email,
-            "senha": "SenhaValida123!",
-            "chave_publica_maquina": self.machine_public_pem
+            "password": "SenhaValida123!",
+            "machine_public_key": self.machine_public_pem
         }
-        self.client.post(self.url_iniciar, data=self._encrypt_request_body(req_step1), format='json')
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
 
         user = User.objects.get(email=admin_email)
         totp_code = TOTPService.generate_totp(user.totp_secret)
@@ -240,16 +240,16 @@ class AdminPreCadastroTests(APITestCase):
 
         req_step3 = {
             "email": admin_email,
-            "codigo_totp": totp_code,
-            "assinatura": base64.b64encode(forged_sig).decode('utf-8')
+            "totp_code": totp_code,
+            "signature": base64.b64encode(forged_sig).decode('utf-8')
         }
-        response = self.client.post(self.url_confirmar, data=self._encrypt_request_body(req_step3), format='json')
+        response = self.client.post(self.url_confirm, data=self._encrypt_request_body(req_step3), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("assinatura", resp_data)
+        self.assertIn("signature", resp_data)
 
-    def test_pre_cadastro_with_already_active_user_fails(self):
+    def test_pre_registration_with_already_active_user_fails(self):
         """Valida que tentar pré-cadastrar um e-mail de usuário já ativo retorna erro 400."""
         active_email = "active.admin@votaai.org"
         User.objects.create_user(
@@ -261,16 +261,16 @@ class AdminPreCadastroTests(APITestCase):
 
         req = {
             "email": active_email,
-            "senha": "NovaSenha123!",
-            "chave_publica_maquina": self.machine_public_pem
+            "password": "NovaSenha123!",
+            "machine_public_key": self.machine_public_pem
         }
-        response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+        response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         resp_data = self._decrypt_response_body(response)
         self.assertIn("email", resp_data)
 
-    def test_pre_cadastro_with_weak_password_fails(self):
+    def test_pre_registration_with_weak_password_fails(self):
         """Valida que senhas sem caracteres especiais, números ou maiúsculas são rejeitadas."""
         weak_passwords = [
             "senhafraca",          # sem maiúscula, número, caractere especial
@@ -283,30 +283,30 @@ class AdminPreCadastroTests(APITestCase):
         for weak_pass in weak_passwords:
             req = {
                 "email": f"teste.{abs(hash(weak_pass))}@votaai.org",
-                "senha": weak_pass,
-                "chave_publica_maquina": self.machine_public_pem
+                "password": weak_pass,
+                "machine_public_key": self.machine_public_pem
             }
-            response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+            response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
             self.assertEqual(
                 response.status_code,
                 status.HTTP_400_BAD_REQUEST,
                 f"A senha fraca '{weak_pass}' deveria ter sido rejeitada com status 400!"
             )
             resp_data = self._decrypt_response_body(response)
-            self.assertIn("senha", resp_data)
+            self.assertIn("password", resp_data)
 
-    def test_pre_cadastro_with_same_usuario_maquina_fails(self):
+    def test_pre_registration_with_same_machine_user_fails(self):
         """Valida que tentar pré-cadastrar outro admin para a mesma máquina física (usuario_maquina) retorna erro 400."""
         existing_admin_email = "existing.machine.admin@votaai.org"
         device_id = "dev-unique-machine-99"
         
-        # Cria admin ativo vinculado a esse usuario_maquina
+        # Cria admin ativo vinculado a esse machine_user
         User.objects.create_user(
             username=existing_admin_email,
             email=existing_admin_email,
             password="SenhaExistente123!",
             is_active=True,
-            usuario_maquina=device_id
+            machine_user=device_id
         )
 
         # Nova chave RSA simulando tentativa de burlar a chave TPM na mesma máquina física
@@ -318,25 +318,25 @@ class AdminPreCadastroTests(APITestCase):
 
         req = {
             "email": "intruder.admin@votaai.org",
-            "senha": "OutraSenhaForte!123",
-            "chave_publica_maquina": other_pub_pem,
-            "usuario_maquina": device_id
+            "password": "OutraSenhaForte!123",
+            "machine_public_key": other_pub_pem,
+            "machine_user": device_id
         }
-        response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+        response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("usuario_maquina", resp_data)
+        self.assertIn("machine_user", resp_data)
 
-    def test_pre_cadastro_without_machine_user_fails(self):
+    def test_pre_registration_without_machine_user_fails(self):
         """Valida que tentar pré-cadastrar sem identificador de máquina (machine_user) retorna erro 400."""
         req = {
             "email": "no.machine@votaai.org",
-            "senha": "SenhaValida123!",
-            "chave_publica_maquina": self.machine_public_pem,
+            "password": "SenhaValida123!",
+            "machine_public_key": self.machine_public_pem,
             "_omit_machine_user": True
         }
-        response = self.client.post(self.url_iniciar, data=self._encrypt_request_body(req), format='json')
+        response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
         self.assertIn("machine_user", resp_data)

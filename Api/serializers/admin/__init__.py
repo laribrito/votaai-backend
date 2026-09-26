@@ -1,13 +1,13 @@
-from .adminPreCadastroSerializer import (
-    AdminPreCadastroIniciarSerializer,
-    AdminPreCadastroConfirmarSerializer,
-    AdminPreCadastroIniciarResponseSerializer,
-    AdminPreCadastroConfirmarResponseSerializer,
+from .adminPreRegistrationSerializer import (
+    AdminPreRegistrationStartSerializer,
+    AdminPreRegistrationConfirmSerializer,
+    AdminPreRegistrationStartResponseSerializer,
+    AdminPreRegistrationConfirmResponseSerializer,
 )
 
 __all__ = [
-    'AdminPreCadastroIniciarSerializer',
-    'AdminPreCadastroConfirmarSerializer',
-    'AdminPreCadastroIniciarResponseSerializer',
-    'AdminPreCadastroConfirmarResponseSerializer',
+    'AdminPreRegistrationStartSerializer',
+    'AdminPreRegistrationConfirmSerializer',
+    'AdminPreRegistrationStartResponseSerializer',
+    'AdminPreRegistrationConfirmResponseSerializer',
 ]
