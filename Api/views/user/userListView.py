@@ -9,6 +9,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 from Api.serializers.user.userListSerializer import UserListSerializer
 from Api.filters.user.userListFilter import UserListFilter
 from Api.pagination.userListPagination import UserListPagination
+from Controllers.querysets.user.userListQueryset import UserListQuerySet
 from Controllers.actions.user.userListActions import UserListAction
 from Infrastructure.permissions import CanManageUsers
 
@@ -39,8 +40,8 @@ class UserListViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
         
-        # Delega a construção do QuerySet para a camada de Action/Controller
-        return UserListAction.getBaseQueryset()
+        # Delega a construção do QuerySet para a camada de QuerySet
+        return UserListQuerySet.getBaseQueryset()
 
     @extend_schema(
         summary="User Statistics",

@@ -9,10 +9,9 @@ class UserListAction:
     @staticmethod
     def getBaseQueryset():
         """
-        Retorna a query base já com as otimizações e ordenação padrão aplicadas.
+        Retorna a query base já com as otimizações e ordenação padrão aplicadas delegando para UserListQuerySet.
         """
-        # Instancia o QuerySet passando o model para não quebrar a arquitetura
-        return UserListQuerySet(model=User).withRoles().defaultListOrder()
+        return UserListQuerySet.getBaseQueryset()
 
     @staticmethod
     def getStatsCounts():
@@ -20,13 +19,15 @@ class UserListAction:
         Retorna as contagens estatísticas de usuários (ativos, inativos, roles).
         Oculta a lógica de montagem dos dados da View.
         """
-        baseQs = UserListAction.getBaseQueryset()
+        baseQs = UserListQuerySet.getBaseQueryset()
         
         return {
-            "ativos": baseQs.count_active(),
-            "inativos": baseQs.count_inactive(),
-            "moderadores": baseQs.count_by_role('Moderador'),
-            "redatores": baseQs.count_by_role('Redator'),
-            "administradores": baseQs.count_by_role('Administrador'),
+            "ativos": baseQs.countActive(),
+            "inativos": baseQs.countInactive(),
+            "moderadores": baseQs.countByRole('Moderador'),
+            "redatores": baseQs.countByRole('Redator'),
+            "administradores": baseQs.countByRole('Administrador'),
         }
+
+    get_stats_counts = getStatsCounts
     

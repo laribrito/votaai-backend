@@ -8,6 +8,7 @@ from Api.serializers.permission.permissionSerializer import (
     PermissionSerializer,
     PermissionCreateUpdateSerializer
 )
+from Controllers.querysets.permission.permissionQueryset import PermissionQuerySet
 from Controllers.actions.permission.permissionActions import PermissionActions
 from Infrastructure.permissions import CanManagePermissions
 
@@ -63,7 +64,7 @@ class PermissionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Permission.objects.none()
-        return PermissionActions.getBaseQueryset()
+        return PermissionQuerySet.getBaseQueryset()
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:

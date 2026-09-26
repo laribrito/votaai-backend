@@ -32,7 +32,7 @@ class UserUpdateAction:
 
             # 4. Handle Direct Permissions Update logic (Admin Only)
             if allow_role_update and permissionIdentifiers is not None:
-                from Controllers.querysets.permission.permission_queryset import PermissionQuerySet
+                from Controllers.querysets.permission.permissionQueryset import PermissionQuerySet
                 from django.contrib.auth.models import Permission
                 perms = PermissionQuerySet(model=Permission).byCodenamesOrIds(permissionIdentifiers)
                 user_instance.user_permissions.set(perms)
