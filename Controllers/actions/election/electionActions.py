@@ -35,20 +35,20 @@ class ElectionActions:
             questions = []
 
         if not isinstance(questions, list) or len(questions) == 0:
-            raise ValidationError({"cedula": "A cédula deve conter ao menos uma pergunta."})
+            raise ValidationError({"ballot": "The ballot must contain at least one question."})
 
         questions_count = len(questions)
         options_count = 0
 
         for idx, q in enumerate(questions):
             if not isinstance(q, dict):
-                raise ValidationError({"cedula": f"Pergunta no índice {idx} deve ser um objeto JSON."})
+                raise ValidationError({"ballot": f"Question at index {idx} must be a JSON object."})
 
             options = q.get('options') or q.get('opcoes') or q.get('alternativas')
             if not isinstance(options, list) or len(options) == 0:
                 q_name = q.get('question') or q.get('pergunta') or q.get('titulo') or q.get('enunciado') or str(idx + 1)
                 raise ValidationError({
-                    "cedula": f"A pergunta '{q_name}' deve conter ao menos uma opção."
+                    "ballot": f"Question '{q_name}' must contain at least one option."
                 })
             options_count += len(options)
 
@@ -63,57 +63,61 @@ class ElectionActions:
         - Creates ElectoralCollege records
         - Signs response payload with server TPM (VotaAI_SecureKey_1)
         """
-        title = (data.get('titulo') or data.get('title') or '').strip()
-        ballot = data.get('cedula') or data.get('ballot')
+        title = str(data.get('title') or data.get('titulo') or '').strip()
+        ballot = data.get('ballot') if data.get('ballot') is not None else data.get('cedula')
         electoral_college = (
-            data.get('colegiadoEleitoral')
-            or data.get('colegiado_eleitoral')
+            data.get('electoral_college')
             or data.get('electoralCollege')
-            or data.get('electoral_college')
+            or data.get('colegiadoEleitoral')
+            or data.get('colegiado_eleitoral')
         )
-        public_key = (
-            data.get('chavePublica')
-            or data.get('chave_publica')
+        public_key = str(
+            data.get('public_key')
             or data.get('publicKey')
-            or data.get('public_key')
+            or data.get('chavePublica')
+            or data.get('chave_publica')
             or ''
         ).strip()
-        key_handle = (
-            data.get('keyHandle')
-            or data.get('key_handle')
+        key_handle = str(
+            data.get('key_handle')
+            or data.get('keyHandle')
             or ''
         ).strip()
-        machine_signature = (
-            data.get('assinatura')
-            or data.get('signature')
+        machine_signature = str(
+            data.get('signature')
             or data.get('machine_signature')
+            or data.get('assinatura')
             or ''
         ).strip()
         start_datetime = (
-            data.get('dataHoraInicio')
-            or data.get('data_hora_inicio')
+            data.get('start_datetime')
             or data.get('startDatetime')
-            or data.get('start_datetime')
+            or data.get('start_date')
+            or data.get('startDate')
+            or data.get('dataHoraInicio')
+            or data.get('data_hora_inicio')
         )
         end_datetime = (
-            data.get('dataHoraFim')
-            or data.get('data_hora_fim')
+            data.get('end_datetime')
             or data.get('endDatetime')
-            or data.get('end_datetime')
+            or data.get('end_date')
+            or data.get('endDate')
+            or data.get('dataHoraFim')
+            or data.get('data_hora_fim')
         )
 
         if not title:
-            raise ValidationError({"titulo": "O título da eleição é obrigatório."})
+            raise ValidationError({"title": "The election title is required."})
         if ballot is None:
-            raise ValidationError({"cedula": "A cédula é obrigatória."})
+            raise ValidationError({"ballot": "The ballot structure is required."})
         if electoral_college is None:
-            raise ValidationError({"colegiadoEleitoral": "O colegiado eleitoral é obrigatório."})
+            raise ValidationError({"electoral_college": "The electoral college is required."})
         if not public_key:
-            raise ValidationError({"chavePublica": "A chave pública da eleição é obrigatória."})
+            raise ValidationError({"public_key": "The election public key is required."})
         if not key_handle:
-            raise ValidationError({"keyHandle": "O handle da chave (keyHandle) é obrigatório."})
+            raise ValidationError({"key_handle": "The keyHandle is required."})
         if not machine_signature:
-            raise ValidationError({"assinatura": "A assinatura da máquina é obrigatória."})
+            raise ValidationError({"signature": "The machine digital signature is required."})
 
         # 1. Validate ballot structure and compute counts
         questions_raw, questions_count, options_count = cls._extract_questions_and_options(ballot)
@@ -141,7 +145,7 @@ class ElectionActions:
 
         if not machine_pub_key:
             raise ValidationError({
-                "assinatura": "Chave pública da máquina física não encontrada para validar a assinatura."
+                "signature": "Physical machine public key not found to validate signature."
             })
 
         # 3. Validate digital signature generated by the client machine
@@ -166,6 +170,20 @@ class ElectionActions:
                 "key_handle": key_handle,
                 "titulo": title
             }, sort_keys=True).encode('utf-8'),
+            json.dumps({
+                "publicKey": public_key,
+                "electoralCollege": electoral_college,
+                "ballot": ballot,
+                "keyHandle": key_handle,
+                "title": title
+            }, sort_keys=True).encode('utf-8'),
+            json.dumps({
+                "public_key": public_key,
+                "electoral_college": electoral_college,
+                "ballot": ballot,
+                "key_handle": key_handle,
+                "title": title
+            }, sort_keys=True).encode('utf-8'),
             title.encode('utf-8')
         ]
 
@@ -176,7 +194,7 @@ class ElectionActions:
 
         if not is_valid_sig:
             raise ValidationError({
-                "assinatura": "Assinatura da máquina física inválida ou payload divergente."
+                "signature": "Physical machine signature is invalid or payload does not match."
             })
 
         # 4. Atomic creation in normalized relational tables
@@ -279,6 +297,9 @@ class ElectionActions:
 
         return {
             "id": election.id,
+            "questions_count": questions_count,
+            "options_count": options_count,
+            "signature": server_signature,
             "qtdPerguntas": questions_count,
             "qtdOpcoes": options_count,
             "assinatura": server_signature
