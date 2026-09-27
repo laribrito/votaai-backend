@@ -24,7 +24,7 @@ class AuthActions:
         password = data.get('password')
         totp_code = str(data.get('totp_code') or '').strip()
         signature = str(data.get('signature') or '').strip()
-        machine_user = str(data.get('machine_user') or '').strip()
+        device_id = str(data.get('device_id') or '').strip()
 
         # 1. Validate Credentials using Django's internal QuerySet/Auth backend
         user = authenticate(username=username, password=password)
@@ -62,14 +62,14 @@ class AuthActions:
 
         # 4. Validate Machine Identifier (if user is bound to a physical machine)
         if user.machine_user:
-            if machine_user and machine_user != user.machine_user:
+            if device_id and device_id != user.machine_user:
                 raise ValidationError({
-                    "machine_user": f"Access denied: this machine ({machine_user}) is not authorized for this administrator user."
+                    "device_id": f"Access denied: this machine ({device_id}) is not authorized for this administrator user."
                 })
 
         # 5. Validate Machine Hardware TPM Signature (if user is bound to machine public key)
         if user.machine_public_key:
-            if machine_user and not signature:
+            if device_id and not signature:
                 raise ValidationError({
                     "signature": "The hardware security (TPM) signature is required for this device."
                 })
@@ -79,9 +79,9 @@ class AuthActions:
                     f"{user.email}:{totp_code}".encode('utf-8'),
                     f"{user.username}:{totp_code}".encode('utf-8'),
                     f"{totp_code}".encode('utf-8'),
-                    f"{user.email}:{totp_code}:{machine_user}".encode('utf-8'),
-                    f"{user.username}:{totp_code}:{machine_user}".encode('utf-8'),
-                    f"{machine_user}:{totp_code}".encode('utf-8'),
+                    f"{user.email}:{totp_code}:{device_id}".encode('utf-8'),
+                    f"{user.username}:{totp_code}:{device_id}".encode('utf-8'),
+                    f"{device_id}:{totp_code}".encode('utf-8'),
                     json.dumps({"totp_code": totp_code, "email": user.email}, sort_keys=True).encode('utf-8'),
                     json.dumps({"email": user.email, "totp_code": totp_code}, sort_keys=True).encode('utf-8'),
                     json.dumps({"totp_code": totp_code, "username": user.username}, sort_keys=True).encode('utf-8'),
@@ -90,7 +90,7 @@ class AuthActions:
                     user.username.encode('utf-8'),
                 ]
                 full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
-                full_payload.pop('machine_user', None)
+                full_payload.pop('device_id', None)
                 is_sig_valid = any(
                     SECryptoService.verify_signature(user.machine_public_key, cand, signature)
                     for cand in candidate_payloads
