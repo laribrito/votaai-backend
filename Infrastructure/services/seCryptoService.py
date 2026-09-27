@@ -161,7 +161,7 @@ class SECryptoService:
                 "tpm2_sign",
                 "-c", str(key_ctx),
                 "-g", "sha256",
-                "-s", "rsassa",
+                "-s", "rsapss",
                 "-f", "plain",
                 "-o", sig_path,
                 in_path
@@ -177,7 +177,7 @@ class SECryptoService:
                 ], capture_output=True)
                 res = subprocess.run(cmd, capture_output=True, text=True)
                 if res.returncode != 0:
-                    raise RuntimeError(f"Erro na assinatura com hardware TPM: {res.stderr.strip()}")
+                    raise RuntimeError(f"Erro na assinatura RSA-PSS com hardware TPM: {res.stderr.strip()}")
 
             with open(sig_path, 'rb') as f:
                 sig_bytes = f.read()
@@ -423,20 +423,54 @@ class SECryptoService:
     @classmethod
     def verify_signature(cls, public_key, data: bytes, signature_b64: str) -> bool:
         """
-        Verifica a assinatura digital RSA PKCS#1 v1.5 + SHA-256 usando a chave pública informada.
-        Suporta instância de RSAPublicKey ou chave em formato PEM/DER/CNG BLOB.
+        Verifica a assinatura digital RSA usando a chave pública informada.
+        Compatível com RSA-PSS (MAX_LENGTH, DIGEST_LENGTH, AUTO) e PKCS1v15,
+        garantindo suporte a hardware TPM, software e clientes multiplataforma.
         """
         try:
             if not isinstance(public_key, rsa.RSAPublicKey):
                 public_key = cls.load_rsa_public_key(public_key)
 
             sig_bytes = base64.b64decode(signature_b64.strip())
-            public_key.verify(
-                sig_bytes,
-                data,
+
+            for pad in [
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
+                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.AUTO),
                 padding.PKCS1v15(),
-                hashes.SHA256()
-            )
-            return True
+            ]:
+                try:
+                    public_key.verify(sig_bytes, data, pad, hashes.SHA256())
+                    return True
+                except Exception:
+                    continue
+
+            return False
         except Exception:
             return False
+
+    @classmethod
+    def verify_payload_signature(cls, public_key, payload_dict: dict) -> bool:
+        """
+        Verifica a assinatura RSA-PSS embutida no payload descriptografado.
+        Segue estritamente o padrão do VotaAI Desktop:
+        O Desktop serializa o dicionário canônico (sem o campo 'signature', com chaves ordenadas
+        e sem espaços) em UTF-8, assina com a chave privada de hardware via RSA-PSS
+        e injeta o resultado em Base64 no campo 'signature'.
+        """
+        signature_b64 = payload_dict.get('signature')
+        if not signature_b64:
+            return False
+
+        # Modo estrito do Desktop: todo o payload exceto 'signature'
+        canonical_dict = {k: v for k, v in payload_dict.items() if k != 'signature'}
+        canonical_bytes = json.dumps(
+            canonical_dict,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+
+        return cls.verify_signature(public_key, canonical_bytes, signature_b64)
+
+

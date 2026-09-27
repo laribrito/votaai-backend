@@ -82,23 +82,14 @@ class SEDecryptMiddleware(MiddlewareMixin):
         # Se houver corpo na requisição
         if request.body:
             try:
-                # O cliente envia um JSON contendo a string base64 criptografada
-                # Formato esperado: {"encrypted_payload": "...", "encrypted_aes_key": "...", ...}
+                # O cliente envia um JSON contendo o envelope híbrido criptografado.
+                # Formato externo: { "encrypted_payload": "...", "encrypted_aes_key": "...", "iv": "...", "tag": "..." }
+                # client_public_key e signature vêm DENTRO do payload cifrado, não no envelope externo.
                 body_data = json.loads(request.body)
                 encrypted_payload = body_data.get('encrypted_payload')
                 encrypted_aes_key = body_data.get('encrypted_aes_key')
                 iv = body_data.get('iv')
                 tag = body_data.get('tag')
-                client_public_key = body_data.get('client_public_key')
-
-                # Se a chave pública do cliente veio dentro do envelope JSON da requisição, salva
-                if client_public_key:
-                    request._client_public_key = client_public_key
-                    if device_type:
-                        try:
-                            SECryptoService.save_client_public_key(device_type, client_public_key)
-                        except Exception as e:
-                            logger.warning(f"Não foi possível salvar chave pública enviada no body: {e}")
 
                 if not encrypted_payload:
                     return JsonResponse({'error': 'Payload criptografado não encontrado. Envie no campo "encrypted_payload".'}, status=400)
@@ -122,13 +113,50 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 decrypted_json_bytes = aesgcm.decrypt(iv_bytes, ciphertext, None)
                 decrypted_json_str = decrypted_json_bytes.decode('utf-8')
                 
-                # Valida se o texto devolvido pelo TPM é um JSON válido
-                json.loads(decrypted_json_str)
-                
-                # Sobrescreve o corpo da requisição com os dados em texto claro.
-                # Dessa forma, as Views (Controllers) não precisam saber de criptografia.
-                request._body = decrypted_json_str.encode('utf-8')
-                
+                # 2. Valida e parseia o payload descriptografado
+                decrypted_payload = json.loads(decrypted_json_str)
+
+                # 3. Extrai client_public_key de DENTRO do payload descriptografado ou do envelope externo.
+                client_public_key_pem = (
+                    decrypted_payload.get('client_public_key')
+                    or decrypted_payload.get('machine_public_key')
+                    or body_data.get('client_public_key')
+                )
+                if client_public_key_pem:
+                    request._client_public_key = client_public_key_pem
+                    try:
+                        SECryptoService.save_client_public_key(device_type, client_public_key_pem)
+                    except Exception as e:
+                        logger.warning(f"Não foi possível salvar chave pública extraída do payload: {e}")
+
+                # 4. Resolve qual chave pública usar para verificar a assinatura RSA-PSS.
+                #    Prioridade: chave recém-recebida no payload > chave salva em disco.
+                verify_pub_key = client_public_key_pem or SECryptoService.get_client_public_key(device_type)
+
+                # 5. Verifica a assinatura RSA-PSS injetada pelo desktop antes de cifrar (Sign-then-Encrypt).
+                if verify_pub_key and 'signature' in decrypted_payload:
+                    is_valid_envelope = SECryptoService.verify_payload_signature(verify_pub_key, decrypted_payload)
+                    request._envelope_signature_valid = is_valid_envelope
+                    if not is_valid_envelope and path.startswith('/api/admin/pre-registration'):
+                        logger.warning(f"Assinatura RSA-PSS de envelope inválida para {device_type} em {path}.")
+                        return JsonResponse(
+                            {'error': 'Assinatura digital inválida ou ausente. Requisição rejeitada.'},
+                            status=403
+                        )
+
+                # 6. Normaliza aliases em inglês para compatibilidade com serializers e views
+                if 'client_public_key' in decrypted_payload and 'machine_public_key' not in decrypted_payload:
+                    decrypted_payload['machine_public_key'] = decrypted_payload['client_public_key']
+                elif 'machine_public_key' in decrypted_payload and 'client_public_key' not in decrypted_payload:
+                    decrypted_payload['client_public_key'] = decrypted_payload['machine_public_key']
+
+                if 'device_id' in decrypted_payload and 'machine_user' not in decrypted_payload:
+                    decrypted_payload['machine_user'] = decrypted_payload['device_id']
+
+                # 7. Sobrescreve o corpo da requisição com os dados em texto claro.
+                #    Dessa forma, as Views (Controllers) não precisam saber de criptografia.
+                request._body = json.dumps(decrypted_payload).encode('utf-8')
+
                 # Forçamos o Content-Type para json para evitar problemas nos parsers do Django
                 request.META['CONTENT_TYPE'] = 'application/json'
 
