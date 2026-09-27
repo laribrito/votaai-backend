@@ -382,16 +382,34 @@ class SECryptoService:
     def get_client_public_key(cls, device_type: str = 'desktop'):
         """
         Lê e faz o parse da chave pública do cliente salva no arquivo txt.
-        Retorna None se o arquivo não existir.
+        Se não existir em disco, tenta resgatar do banco de dados (User).
+        Retorna None se não for encontrada.
         """
         file_path = cls._get_key_file_path(device_type)
-        if not file_path.exists():
-            return None
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-        if not content:
-            return None
-        return cls.load_rsa_public_key(content)
+        if file_path.exists():
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            if content:
+                try:
+                    return cls.load_rsa_public_key(content)
+                except Exception:
+                    pass
+
+        # Fallback: busca chave cadastrada no modelo User se for desktop
+        if device_type == 'desktop':
+            try:
+                from Domain.models.schemas.moderation.userSchema import User
+                user_with_key = User.objects.filter(machine_public_key__isnull=False, is_active=True).exclude(machine_public_key='').first()
+                if user_with_key and user_with_key.machine_public_key:
+                    try:
+                        cls.save_client_public_key(device_type, user_with_key.machine_public_key)
+                    except Exception:
+                        pass
+                    return cls.load_rsa_public_key(user_with_key.machine_public_key)
+            except Exception:
+                pass
+
+        return None
 
     @classmethod
     def encrypt_response_hybrid(cls, public_key, data_bytes: bytes) -> dict:
