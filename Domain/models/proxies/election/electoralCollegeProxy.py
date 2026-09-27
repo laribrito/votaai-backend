@@ -23,13 +23,19 @@ class ElectoralCollegeProxy:
             return False
         return check_password(raw_password, password)
 
+    @staticmethod
+    def extract_first_name(full_name: str) -> str:
+        """
+        Extracts the first name from a full name string.
+        """
+        parts = (full_name or '').strip().split()
+        return parts[0] if parts else ''
+
     def get_first_name(self) -> str:
         """
         Extracts the first name from the voter's full_name.
         """
-        full_name = getattr(self, 'full_name', '') or ''
-        parts = full_name.strip().split()
-        return parts[0] if parts else ''
+        return self.extract_first_name(getattr(self, 'full_name', ''))
 
     @property
     def first_name(self) -> str:

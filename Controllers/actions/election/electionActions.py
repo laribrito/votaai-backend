@@ -199,10 +199,8 @@ class ElectionActions:
                     if not full_name and email:
                         full_name = email.split('@')[0]
 
-                    parts = full_name.split()
-                    first_name = parts[0] if parts else full_name
                     # O apelido deve ser o primeiro nome do nome completo
-                    nickname = first_name
+                    nickname = ElectoralCollege.extract_first_name(full_name)
 
                     raw_pw = voter.get('password') or ''
                     if raw_pw:
@@ -225,10 +223,8 @@ class ElectionActions:
                     if not full_name and email:
                         full_name = email.split('@')[0]
 
-                    parts = full_name.split()
-                    first_name = parts[0] if parts else full_name
                     # O apelido deve ser o primeiro nome do nome completo
-                    nickname = first_name
+                    nickname = ElectoralCollege.extract_first_name(full_name)
                     password_hash = ''
 
                 if email:
