@@ -118,12 +118,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 # 2. Valida e parseia o payload descriptografado
                 decrypted_payload = json.loads(decrypted_json_str)
 
-                # 3. Extrai client_public_key de DENTRO do payload descriptografado ou do envelope externo.
-                client_public_key_pem = (
-                    decrypted_payload.get('client_public_key')
-                    or decrypted_payload.get('machine_public_key')
-                    or body_data.get('client_public_key')
-                )
+                # 3. Extrai client_public_key obrigatoriamente de DENTRO do payload descriptografado
+                client_public_key_pem = decrypted_payload.get('machine_public_key')
                 if client_public_key_pem:
                     request._client_public_key = client_public_key_pem
                     try:
@@ -166,16 +162,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
                             status=403
                         )
 
-                # 7. Normaliza aliases em inglês para compatibilidade com serializers e views
-                if 'client_public_key' in decrypted_payload and 'machine_public_key' not in decrypted_payload:
-                    decrypted_payload['machine_public_key'] = decrypted_payload['client_public_key']
-                elif 'machine_public_key' in decrypted_payload and 'client_public_key' not in decrypted_payload:
-                    decrypted_payload['client_public_key'] = decrypted_payload['machine_public_key']
-
-                if 'device_id' in decrypted_payload and 'machine_user' not in decrypted_payload:
-                    decrypted_payload['machine_user'] = decrypted_payload['device_id']
-
-                # 8. Sobrescreve o corpo da requisição com os dados em texto claro.
+                # 7. Sobrescreve o corpo da requisição com os dados em texto claro.
                 #    Dessa forma, as Views (Controllers) não precisam saber de criptografia.
                 request._body = json.dumps(decrypted_payload).encode('utf-8')
 
@@ -239,12 +226,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
             # Se havia um nonce no request, inclui também no envelope de resposta para clientes que validam o envelope externo
             nonce_val = getattr(request, '_nonce', None)
             if nonce_val is not None:
-                encrypted_data["nonce"] = nonce_val
-                encrypted_data["nonceClient"] = nonce_val
-                encrypted_data["nonceClient1"] = nonce_val
-                encrypted_data["nonceClient2"] = nonce_val
-                encrypted_data["client_nonce"] = nonce_val
-                encrypted_data["nonce_client"] = nonce_val
+
                 if getattr(request, '_nonce_key', None):
                     encrypted_data[request._nonce_key] = nonce_val
 
