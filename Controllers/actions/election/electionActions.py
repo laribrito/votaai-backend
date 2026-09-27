@@ -1,13 +1,17 @@
 import json
 import logging
+from pathlib import Path
+from django.conf import settings
 from django.db import transaction
 from django.contrib.auth.hashers import make_password
 from rest_framework.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from cryptography.hazmat.primitives import serialization
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.moderation.userSchema import User
 from Infrastructure.services.seCryptoService import SECryptoService
 
 logger = logging.getLogger(__name__)
@@ -90,8 +94,8 @@ class ElectionActions:
 
         # 2. Locate machine public key for signature validation
         machine_pub_key = None
-        if user and getattr(user, 'chave_publica_maquina', None):
-            machine_pub_key = user.chave_publica_maquina
+        if user and getattr(user, 'machine_public_key', None):
+            machine_pub_key = user.machine_public_key
         
         if not machine_pub_key:
             machine_pub_key = (
@@ -143,8 +147,51 @@ class ElectionActions:
                 "signature": _("Physical machine signature is invalid or payload does not match.")
             })
 
+        # Resolve creator user by authentication, machine_public_key, or desktop_public_key.txt
+        creator_user = user if (user and user.is_authenticated) else None
+        if not creator_user and machine_pub_key:
+            if isinstance(machine_pub_key, str):
+                creator_user = User.objects.filter(machine_public_key=machine_pub_key.strip()).first()
+            elif hasattr(machine_pub_key, 'public_bytes'):
+                pem_str = machine_pub_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ).decode('utf-8').strip()
+                creator_user = User.objects.filter(machine_public_key=pem_str).first()
+
+        if not creator_user:
+            pub_key_path = Path(getattr(settings, 'BASE_DIR', Path.cwd())) / 'desktop_public_key.txt'
+            if pub_key_path.exists():
+                try:
+                    with open(pub_key_path, 'r', encoding='utf-8') as f:
+                        file_key = f.read().strip()
+                    if file_key:
+                        creator_user = User.objects.filter(machine_public_key=file_key).first()
+                except Exception as e:
+                    logger.warning(f"Erro ao ler desktop_public_key.txt para vincular criador: {e}")
+
+        if not creator_user:
+            try:
+                loaded_key = SECryptoService.get_client_public_key('desktop')
+                if loaded_key:
+                    if hasattr(loaded_key, 'public_bytes'):
+                        pem_str = loaded_key.public_bytes(
+                            encoding=serialization.Encoding.PEM,
+                            format=serialization.PublicFormat.SubjectPublicKeyInfo
+                        ).decode('utf-8').strip()
+                        creator_user = User.objects.filter(machine_public_key=pem_str).first()
+                    elif isinstance(loaded_key, str):
+                        creator_user = User.objects.filter(machine_public_key=loaded_key.strip()).first()
+            except Exception as e:
+                logger.warning(f"Erro ao recuperar chave do desktop para creator_user: {e}")
+
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():
+            if not creator_user:
+                raise ValidationError({
+                    "creator": _("Could not identify the authenticated user or physical machine owner to create the election.")
+                })
+
             election = Election.objects.create(
                 title=title,
                 public_key=public_key,
@@ -153,7 +200,7 @@ class ElectionActions:
                 end_datetime=end_datetime,
                 machine_signature=machine_signature,
                 status=ElectionStatus.CREATED,
-                created_by=user if (user and user.is_authenticated) else None
+                created_by=creator_user
             )
 
             # Persist Question and child Option records
@@ -187,13 +234,28 @@ class ElectionActions:
                     email = (voter.get('email') or '').strip()
                     full_name = (
                         voter.get('full_name')
-                        or email.split('@')[0]
+                        or voter.get('name')
+                        or voter.get('nome')
+                        or voter.get('nome_completo')
+                        or voter.get('fullName')
+                        or ''
                     ).strip()
+
+                    if not full_name and email:
+                        matched_user = User.objects.filter(email__iexact=email).first()
+                        if matched_user:
+                            user_full_name = f"{matched_user.first_name} {matched_user.last_name}".strip()
+                            if user_full_name:
+                                full_name = user_full_name
+
+                    if not full_name and email:
+                        full_name = email.split('@')[0]
+
                     parts = full_name.split()
-                    first_name = parts[0] if parts else ''
-                    nickname = (voter.get('nickname') or first_name).strip()
-                    if not nickname:
-                        nickname = first_name
+                    first_name = parts[0] if parts else full_name
+                    # O apelido deve ser o primeiro nome do nome completo
+                    nickname = first_name
+
                     raw_pw = voter.get('password') or ''
                     if raw_pw:
                         if str(raw_pw).startswith(('pbkdf2_sha256$', 'argon2', 'bcrypt')):
@@ -204,9 +266,20 @@ class ElectionActions:
                         password_hash = ''
                 else:
                     email = str(voter).strip()
-                    full_name = email.split('@')[0]
+                    full_name = ''
+                    if email:
+                        matched_user = User.objects.filter(email__iexact=email).first()
+                        if matched_user:
+                            user_full_name = f"{matched_user.first_name} {matched_user.last_name}".strip()
+                            if user_full_name:
+                                full_name = user_full_name
+
+                    if not full_name and email:
+                        full_name = email.split('@')[0]
+
                     parts = full_name.split()
-                    first_name = parts[0] if parts else ''
+                    first_name = parts[0] if parts else full_name
+                    # O apelido deve ser o primeiro nome do nome completo
                     nickname = first_name
                     password_hash = ''
 
