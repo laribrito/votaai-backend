@@ -2,9 +2,7 @@ import hashlib
 import secrets
 from django.core.mail import send_mail
 from django.conf import settings
-
 from Domain.models.schemas.election.votingTokenSchema import VotingToken
-
 
 class VotingTokenService:
     """
