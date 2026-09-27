@@ -15,6 +15,7 @@ from Domain.models.schemas.election.electionSchema import Election, ElectionStat
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.moderation.userSchema import User
 from Infrastructure.services.seCryptoService import SECryptoService
 
 
@@ -30,6 +31,13 @@ class ElectionCreateTests(APITestCase):
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
         self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
+        self._original_client_key_content = None
+        if os.path.exists(self.client_key_file):
+            try:
+                with open(self.client_key_file, 'r', encoding='utf-8') as f:
+                    self._original_client_key_content = f.read()
+            except Exception:
+                pass
 
         if not os.path.exists(keys_path):
             self.skipTest("Arquivo se_keys_info.json não encontrado. Execute generate_se_keys primeiro.")
@@ -57,11 +65,26 @@ class ElectionCreateTests(APITestCase):
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8')
 
+        # Cria usuário associado à máquina física para validação de vínculo obrigatório
+        self.user = User.objects.create_user(
+            username='admin.desktop@votaai.org',
+            email='admin.desktop@votaai.org',
+            password='Password123!',
+            is_active=True,
+            machine_public_key=self.machine_public_pem.strip()
+        )
+
         # URL da rota de criação de eleição
         self.url_create = reverse('election-create')
 
     def tearDown(self):
-        if os.path.exists(self.client_key_file):
+        if self._original_client_key_content is not None:
+            try:
+                with open(self.client_key_file, 'w', encoding='utf-8') as f:
+                    f.write(self._original_client_key_content)
+            except Exception:
+                pass
+        elif os.path.exists(self.client_key_file):
             try:
                 os.remove(self.client_key_file)
             except Exception:
@@ -208,6 +231,7 @@ class ElectionCreateTests(APITestCase):
         self.assertEqual(election.title, titulo)
         self.assertEqual(election.key_handle, key_handle)
         self.assertEqual(election.status, ElectionStatus.CREATED)
+        self.assertEqual(election.created_by, self.user)
         self.assertEqual(election.questions_count, 2)
         self.assertEqual(election.options_count, 5)
 
