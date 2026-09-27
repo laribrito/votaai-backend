@@ -31,29 +31,9 @@ class AvailableElectionsView(APIView):
             # 1. Identifica o usuário vinculado a esta máquina física
             user = request.user if (request.user and request.user.is_authenticated) else None
             if not user:
-                client_key = getattr(request, '_client_public_key', None) or decrypted_payload.get("machine_public_key")
-                if not client_key:
-                    pub_key_path = Path(getattr(settings, 'BASE_DIR', Path.cwd())) / 'desktop_public_key.txt'
-                    if pub_key_path.exists():
-                        with open(pub_key_path, 'r', encoding='utf-8') as f:
-                            client_key = f.read().strip()
+                client_key = getattr(request, '_client_public_key', None)
                 if client_key:
                     user = User.objects.filter(machine_public_key=str(client_key).strip()).first()
-
-            if not user:
-                try:
-                    loaded_key = SECryptoService.get_client_public_key('desktop')
-                    if loaded_key:
-                        if hasattr(loaded_key, 'public_bytes'):
-                            pem_str = loaded_key.public_bytes(
-                                encoding=serialization.Encoding.PEM,
-                                format=serialization.PublicFormat.SubjectPublicKeyInfo
-                            ).decode('utf-8').strip()
-                            user = User.objects.filter(machine_public_key=pem_str).first()
-                        elif isinstance(loaded_key, str):
-                            user = User.objects.filter(machine_public_key=loaded_key.strip()).first()
-                except Exception:
-                    pass
 
             # Retorna vazio se não houver usuário vinculado a esta máquina
             if not user:
