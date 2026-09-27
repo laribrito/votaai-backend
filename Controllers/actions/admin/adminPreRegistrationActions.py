@@ -18,7 +18,7 @@ class AdminPreRegistrationActions:
     """
 
     @staticmethod
-    def startPreRegistration(data: dict) -> dict:
+    def startPreRegistration(data: dict, client_pub_key_fallback: str | None = None) -> dict:
         """
         Passo 1 e 2 do fluxo:
         - Recebe email, senha e chave pública da máquina
@@ -29,8 +29,17 @@ class AdminPreRegistrationActions:
         """
         email = data.get('email', '').strip()
         password = data.get('password')
-        machine_public_key = data.get('machine_public_key')
-        machine_user = data.get('machine_user', '').strip()
+        machine_public_key = (
+            data.get('machine_public_key')
+            or data.get('client_public_key')
+            or client_pub_key_fallback
+        )
+        machine_user = str(
+            data.get('machine_user')
+            or data.get('device_id')
+            or data.get('machine_id')
+            or ''
+        ).strip()
 
         if not email:
             raise ValidationError({"email": _("Email is required.")})
@@ -124,7 +133,7 @@ class AdminPreRegistrationActions:
         }
 
     @staticmethod
-    def confirmPreRegistration(data: dict) -> dict:
+    def confirmPreRegistration(data: dict, raw_data: dict | None = None) -> dict:
         """
         Passo 3 e 4 do fluxo:
         - Recebe email, totp_code e signature da máquina
@@ -181,9 +190,21 @@ class AdminPreRegistrationActions:
                     }
                 })
 
-        # 1. Valida assinatura da máquina
-        data_to_verify = f"{email}:{totp_code}".encode('utf-8')
-        is_signature_valid = SECryptoService.verify_signature(user.machine_public_key, data_to_verify, signature)
+        # 1. Valida assinatura da máquina com suporte a formatos canônicos
+        candidate_payloads = [
+            f"{email}:{totp_code}".encode('utf-8'),
+            f"{totp_code}".encode('utf-8'),
+            json.dumps({"totp_code": totp_code, "email": email}, sort_keys=True).encode('utf-8'),
+            json.dumps({"email": email, "totp_code": totp_code}, sort_keys=True).encode('utf-8'),
+            email.encode('utf-8'),
+        ]
+        full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+        full_payload.pop('machine_user', None)
+        
+        is_signature_valid = any(
+            SECryptoService.verify_signature(user.machine_public_key, cand, signature)
+            for cand in candidate_payloads
+        ) or SECryptoService.verify_payload_signature(user.machine_public_key, full_payload) or SECryptoService.verify_payload_signature(user.machine_public_key, data)
 
         if not is_signature_valid:
             raise ValidationError({"signature": _("Invalid machine signature or unauthorized key.")})

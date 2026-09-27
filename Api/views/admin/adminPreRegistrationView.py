@@ -62,10 +62,17 @@ class AdminPreRegistrationViewSet(viewsets.ViewSet):
         return self._start(request)
 
     def _start(self, request):
-        serializer = AdminPreRegistrationStartSerializer(data=request.data)
+        serializer = AdminPreRegistrationStartSerializer(
+            data=request.data,
+            context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
 
-        result = AdminPreRegistrationActions.startPreRegistration(serializer.validated_data)
+        client_pub_key_fallback = getattr(request, '_client_public_key', None)
+        result = AdminPreRegistrationActions.startPreRegistration(
+            serializer.validated_data,
+            client_pub_key_fallback=client_pub_key_fallback
+        )
         return Response(result, status=status.HTTP_200_OK)
 
     @extend_schema(
@@ -88,8 +95,14 @@ class AdminPreRegistrationViewSet(viewsets.ViewSet):
         """
         POST /api/admin/pre-registration/confirm/
         """
-        serializer = AdminPreRegistrationConfirmSerializer(data=request.data)
+        serializer = AdminPreRegistrationConfirmSerializer(
+            data=request.data,
+            context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
 
-        result = AdminPreRegistrationActions.confirmPreRegistration(serializer.validated_data)
+        result = AdminPreRegistrationActions.confirmPreRegistration(
+            serializer.validated_data,
+            raw_data=request.data
+        )
         return Response(result, status=status.HTTP_200_OK)

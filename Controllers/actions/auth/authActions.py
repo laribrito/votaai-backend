@@ -11,7 +11,7 @@ class AuthActions:
     """
 
     @staticmethod
-    def login(data: dict) -> dict:
+    def login(data: dict, raw_data: dict | None = None) -> dict:
         """
         Validates credentials, checks account status, verifies 2FA (TOTP) and hardware integrity,
         and generates an auth token.
@@ -89,10 +89,12 @@ class AuthActions:
                     user.email.encode('utf-8'),
                     user.username.encode('utf-8'),
                 ]
+                full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+                full_payload.pop('machine_user', None)
                 is_sig_valid = any(
                     SECryptoService.verify_signature(user.machine_public_key, cand, signature)
                     for cand in candidate_payloads
-                )
+                ) or SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
                 if not is_sig_valid:
                     raise ValidationError({
                         "signature": "Hardware security validation failed: machine digital signature is invalid or unauthorized."

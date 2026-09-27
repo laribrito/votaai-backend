@@ -17,16 +17,41 @@ class AdminPreRegistrationStartSerializer(serializers.Serializer):
         error_messages={'required': _('Password is required.')}
     )
     machine_public_key = serializers.CharField(
-        required=True,
-        error_messages={'required': _('Machine public key is required.')},
-        help_text='Machine RSA public key in PEM format.'
+        required=False,
+        default=None,
+        allow_null=True,
+        help_text='Machine RSA public key in PEM format. Can be sent in body or extracted by middleware.'
     )
     machine_user = serializers.CharField(
-        required=True,
+        required=False,
+        default=None,
+        allow_null=True,
         max_length=64,
-        error_messages={'required': _('Machine user identifier is required.')},
         help_text='Unique, OS-agnostic identifier of the physical device/machine (e.g. dev-xxxxxxxx).'
     )
+
+    def to_internal_value(self, data):
+        mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
+
+        # Chave pública (aliases em inglês)
+        for alias in ['client_public_key', 'machinePublicKey']:
+            if alias in mutable_data and 'machine_public_key' not in mutable_data:
+                mutable_data['machine_public_key'] = mutable_data[alias]
+                break
+
+        # Fallback para chave pública do request (armazenada pelo middleware)
+        if not mutable_data.get('machine_public_key'):
+            request = self.context.get('request')
+            if request and getattr(request, '_client_public_key', None):
+                mutable_data['machine_public_key'] = request._client_public_key
+
+        # Identificador da máquina (aliases em inglês)
+        for alias in ['device_id', 'deviceId', 'machine_id', 'machineId', 'machineUser']:
+            if alias in mutable_data and 'machine_user' not in mutable_data:
+                mutable_data['machine_user'] = mutable_data[alias]
+                break
+
+        return super().to_internal_value(mutable_data)
 
 
 class AdminPreRegistrationConfirmSerializer(serializers.Serializer):
@@ -63,3 +88,4 @@ class AdminPreRegistrationConfirmResponseSerializer(serializers.Serializer):
     """
     message = serializers.CharField()
     signature = serializers.CharField()
+

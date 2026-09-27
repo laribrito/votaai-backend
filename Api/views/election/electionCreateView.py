@@ -45,6 +45,7 @@ class ElectionCreateView(APIView):
 
         result = ElectionActions.criarEleicao(
             serializer.validated_data,
+            raw_data=request.data,
             user=user,
             client_pub_key_fallback=client_pub_key_fallback
         )

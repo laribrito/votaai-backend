@@ -55,7 +55,7 @@ class ElectionActions:
         return questions, questions_count, options_count
 
     @classmethod
-    def criarEleicao(cls, data: dict, user=None, client_pub_key_fallback: str | None = None) -> dict:
+    def criarEleicao(cls, data: dict, raw_data: dict | None = None, user=None, client_pub_key_fallback: str | None = None) -> dict:
         """
         Executes election creation and relational entities persistence:
         - Creates Election
@@ -130,10 +130,13 @@ class ElectionActions:
             title.encode('utf-8')
         ]
 
+        full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+        full_payload.pop('machine_user', None)
+
         is_valid_sig = any(
             SECryptoService.verify_signature(machine_pub_key, cand, machine_signature)
             for cand in candidate_payloads
-        )
+        ) or SECryptoService.verify_payload_signature(machine_pub_key, full_payload)
 
         if not is_valid_sig:
             raise ValidationError({
