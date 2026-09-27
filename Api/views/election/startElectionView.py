@@ -42,7 +42,9 @@ class StartElectionView(APIView):
                 raise Election.DoesNotExist()
 
             # 2. Valida a assinatura específica da eleição usando sua chave pública
-            payload_to_verify = {k: v for k, v in payload.items() if k not in ["election_signature", "signature"]}
+            payload_to_verify = dict(payload)
+            payload_to_verify.pop("election_signature", None)
+            payload_to_verify.pop("signature", None)
             payload_bytes = json.dumps(payload_to_verify, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
 
             if not SECryptoService.verify_signature(election.public_key, payload_bytes, election_signature):
