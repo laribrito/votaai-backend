@@ -30,7 +30,7 @@ class AdminPreRegistrationActions:
         email = data.get('email', '').strip()
         password = data.get('password')
         machine_public_key = data.get('machine_public_key')
-        machine_user = data.get('machine_user', '').strip()
+        machine_user = str(data.get('device_id') or '').strip()
 
         if not email:
             raise ValidationError({"email": _("Email is required.")})
@@ -124,7 +124,7 @@ class AdminPreRegistrationActions:
         }
 
     @staticmethod
-    def confirmPreRegistration(data: dict) -> dict:
+    def confirmPreRegistration(data: dict, raw_data: dict | None = None) -> dict:
         """
         Passo 3 e 4 do fluxo:
         - Recebe email, totp_code e signature da máquina
@@ -182,8 +182,12 @@ class AdminPreRegistrationActions:
                 })
 
         # 1. Valida assinatura da máquina
-        data_to_verify = f"{email}:{totp_code}".encode('utf-8')
-        is_signature_valid = SECryptoService.verify_signature(user.machine_public_key, data_to_verify, signature)
+        full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+        # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
+        full_payload.pop('machine_user', None)
+        full_payload.pop('machine_public_key', None)
+        
+        is_signature_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
 
         if not is_signature_valid:
             raise ValidationError({"signature": _("Invalid machine signature or unauthorized key.")})

@@ -21,7 +21,8 @@ from Api.views.permission.permissionView import PermissionViewSet
 from Api.views.ping.pingDesktopView import PingDesktopView
 from Api.views.admin.adminPreRegistrationView import AdminPreRegistrationViewSet
 from Api.views.election.electionCreateView import ElectionCreateView
-
+from Api.views.election.availableElectionsView import AvailableElectionsView
+from Api.views.election.startElectionView import StartElectionView
 # ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
 # ---------------------------------------------------------------------------
@@ -54,6 +55,8 @@ urlpatterns = [
 
     # --- Eleição (Desktop) ---
     path('election/create/', ElectionCreateView.as_view(), name='election-create'),
+    path('election/available/', AvailableElectionsView.as_view(), name='election-available'),
+    path('election/start/', StartElectionView.as_view(), name='election-start'),
 
     # --- ViewSets ---
     path('', include(router.urls)),

@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from Core.schemaMixins.timestampSchemaMixin import TimestampSchemaMixin
@@ -67,3 +68,13 @@ class Election(ElectionProxy, TimestampSchemaMixin):
         related_name='elections',
         verbose_name=_('created by')
     )
+
+    def clean(self):
+        super().clean()
+        if not self.created_by:
+            raise ValidationError({'created_by': _('Election must have an associated creator user.')})
+
+    def save(self, *args, **kwargs):
+        if not self.created_by:
+            raise ValueError(_('Election must be associated with a user (created_by cannot be null).'))
+        super().save(*args, **kwargs)
