@@ -57,11 +57,27 @@ class AdminPreRegistrationTests(APITestCase):
             os.remove(self.client_key_file)
 
     def _encrypt_request_body(self, payload_dict: dict) -> dict:
-        """Helper para simular o cliente Desktop cifrando a requisição com a chave do TPM do servidor."""
+        """Helper para simular o cliente Desktop cifrando a requisição com Sign-then-Encrypt."""
         payload_copy = dict(payload_dict)
         omit_machine = payload_copy.pop('_omit_machine_user', False)
-        if not omit_machine and 'machine_user' not in payload_copy and 'totp_code' not in payload_copy:
+        if not omit_machine and 'machine_user' not in payload_copy and 'device_id' not in payload_copy and 'totp_code' not in payload_copy:
             payload_copy['machine_user'] = self.device_id
+
+        if 'client_public_key' not in payload_copy:
+            payload_copy['client_public_key'] = self.machine_public_pem
+
+        # Se signature não estiver presente, gera a assinatura de envelope Sign-then-Encrypt
+        if 'signature' not in payload_copy:
+            canonical_json = json.dumps(payload_copy, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+            envelope_sig = self.machine_private_key.sign(
+                canonical_json.encode('utf-8'),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            payload_copy['signature'] = base64.b64encode(envelope_sig).decode('utf-8')
 
         json_bytes = json.dumps(payload_copy).encode('utf-8')
         aes_key = os.urandom(32)
@@ -76,7 +92,6 @@ class AdminPreRegistrationTests(APITestCase):
             aes_key,
             padding.PKCS1v15()
         )
-
 
         return {
             "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
@@ -340,6 +355,77 @@ class AdminPreRegistrationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
         self.assertIn("machine_user", resp_data)
+
+    def test_desktop_real_client_flow_success(self):
+        """
+        Valida o fluxo exato realizado pelo VotaAI Desktop:
+        O Desktop inclui client_public_key e machine_public_key no payload ANTES de gerar
+        a assinatura canônica RSA-PSS, e depois cifra o envelope com AES-GCM + RSA do TPM.
+        """
+        admin_email = "real.desktop@votaai.org"
+        password = "SenhaSuperSegura123!"
+        device_id = "dev-desktop-hw-test"
+
+        # 1. Payload montado pelo AuthController do Desktop
+        desktop_start_payload = {
+            "email": admin_email,
+            "password": password,
+            "device_id": device_id,
+            "machine_public_key": self.machine_public_pem,
+            "client_public_key": self.machine_public_pem
+        }
+
+        # 2. Canonical JSON assinado pelo EncryptionController do Desktop
+        canonical_json = json.dumps(desktop_start_payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        envelope_sig = self.machine_private_key.sign(
+            canonical_json.encode('utf-8'),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        desktop_start_payload["signature"] = base64.b64encode(envelope_sig).decode('utf-8')
+
+        # 3. Cifra com chave do TPM do servidor
+        req_step1 = self._encrypt_request_body(desktop_start_payload)
+        response_step1 = self.client.post(self.url_start, data=req_step1, format='json')
+        self.assertEqual(response_step1.status_code, status.HTTP_200_OK)
+
+        resp_data1 = self._decrypt_response_body(response_step1)
+        self.assertIn("provisioning_uri", resp_data1)
+
+        # 4. Confirmação com TOTP
+        user = User.objects.get(email=admin_email)
+        totp_code = TOTPService.generate_totp(user.totp_secret)
+
+        confirm_payload = {
+            "email": admin_email,
+            "password": password,
+            "totp_code": totp_code,
+            "device_id": device_id,
+            "machine_public_key": self.machine_public_pem,
+            "client_public_key": self.machine_public_pem
+        }
+        data_to_sign = f"{admin_email}:{totp_code}".encode('utf-8')
+        confirm_sig = self.machine_private_key.sign(
+            data_to_sign,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        confirm_payload["signature"] = base64.b64encode(confirm_sig).decode('utf-8')
+
+        req_step2 = self._encrypt_request_body(confirm_payload)
+        response_step2 = self.client.post(self.url_confirm, data=req_step2, format='json')
+        self.assertEqual(response_step2.status_code, status.HTTP_200_OK)
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.groups.filter(name=GroupRoles.ADMIN.value).exists())
+
 
 
 
