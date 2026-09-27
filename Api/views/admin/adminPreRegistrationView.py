@@ -68,10 +68,8 @@ class AdminPreRegistrationViewSet(viewsets.ViewSet):
         )
         serializer.is_valid(raise_exception=True)
 
-        client_pub_key_fallback = getattr(request, '_client_public_key', None)
         result = AdminPreRegistrationActions.startPreRegistration(
-            serializer.validated_data,
-            client_pub_key_fallback=client_pub_key_fallback
+            serializer.validated_data
         )
         return Response(result, status=status.HTTP_200_OK)
 

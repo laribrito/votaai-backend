@@ -18,7 +18,7 @@ class AdminPreRegistrationActions:
     """
 
     @staticmethod
-    def startPreRegistration(data: dict, client_pub_key_fallback: str | None = None) -> dict:
+    def startPreRegistration(data: dict) -> dict:
         """
         Passo 1 e 2 do fluxo:
         - Recebe email, senha e chave pública da máquina
@@ -29,17 +29,8 @@ class AdminPreRegistrationActions:
         """
         email = data.get('email', '').strip()
         password = data.get('password')
-        machine_public_key = (
-            data.get('machine_public_key')
-            or data.get('client_public_key')
-            or client_pub_key_fallback
-        )
-        machine_user = str(
-            data.get('machine_user')
-            or data.get('device_id')
-            or data.get('machine_id')
-            or ''
-        ).strip()
+        machine_public_key = data.get('machine_public_key')
+        machine_user = str(data.get('device_id') or '').strip()
 
         if not email:
             raise ValidationError({"email": _("Email is required.")})
