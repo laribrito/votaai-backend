@@ -75,26 +75,12 @@ class AuthActions:
                 })
 
             if signature:
-                candidate_payloads = [
-                    f"{user.email}:{totp_code}".encode('utf-8'),
-                    f"{user.username}:{totp_code}".encode('utf-8'),
-                    f"{totp_code}".encode('utf-8'),
-                    f"{user.email}:{totp_code}:{device_id}".encode('utf-8'),
-                    f"{user.username}:{totp_code}:{device_id}".encode('utf-8'),
-                    f"{device_id}:{totp_code}".encode('utf-8'),
-                    json.dumps({"totp_code": totp_code, "email": user.email}, sort_keys=True).encode('utf-8'),
-                    json.dumps({"email": user.email, "totp_code": totp_code}, sort_keys=True).encode('utf-8'),
-                    json.dumps({"totp_code": totp_code, "username": user.username}, sort_keys=True).encode('utf-8'),
-                    json.dumps({"username": user.username, "totp_code": totp_code}, sort_keys=True).encode('utf-8'),
-                    user.email.encode('utf-8'),
-                    user.username.encode('utf-8'),
-                ]
                 full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
-                full_payload.pop('device_id', None)
-                is_sig_valid = any(
-                    SECryptoService.verify_signature(user.machine_public_key, cand, signature)
-                    for cand in candidate_payloads
-                ) or SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
+                # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
+                full_payload.pop('machine_user', None)
+                full_payload.pop('machine_public_key', None)
+                
+                is_sig_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
                 if not is_sig_valid:
                     raise ValidationError({
                         "signature": "Hardware security validation failed: machine digital signature is invalid or unauthorized."

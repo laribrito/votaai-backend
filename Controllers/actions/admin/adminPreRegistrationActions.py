@@ -181,21 +181,13 @@ class AdminPreRegistrationActions:
                     }
                 })
 
-        # 1. Valida assinatura da máquina com suporte a formatos canônicos
-        candidate_payloads = [
-            f"{email}:{totp_code}".encode('utf-8'),
-            f"{totp_code}".encode('utf-8'),
-            json.dumps({"totp_code": totp_code, "email": email}, sort_keys=True).encode('utf-8'),
-            json.dumps({"email": email, "totp_code": totp_code}, sort_keys=True).encode('utf-8'),
-            email.encode('utf-8'),
-        ]
+        # 1. Valida assinatura da máquina
         full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+        # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
         full_payload.pop('machine_user', None)
+        full_payload.pop('machine_public_key', None)
         
-        is_signature_valid = any(
-            SECryptoService.verify_signature(user.machine_public_key, cand, signature)
-            for cand in candidate_payloads
-        ) or SECryptoService.verify_payload_signature(user.machine_public_key, full_payload) or SECryptoService.verify_payload_signature(user.machine_public_key, data)
+        is_signature_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
 
         if not is_signature_valid:
             raise ValidationError({"signature": _("Invalid machine signature or unauthorized key.")})
