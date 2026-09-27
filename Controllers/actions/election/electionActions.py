@@ -59,7 +59,7 @@ class ElectionActions:
         return questions, questions_count, options_count
 
     @classmethod
-    def criarEleicao(cls, data: dict, raw_data: dict | None = None, user=None, client_pub_key_fallback: str | None = None) -> dict:
+    def criarEleicao(cls, data: dict, raw_data: dict | None = None, user=None) -> dict:
         """
         Executes election creation and relational entities persistence:
         - Creates Election
@@ -98,18 +98,7 @@ class ElectionActions:
             machine_pub_key = user.machine_public_key
         
         if not machine_pub_key:
-            machine_pub_key = (
-                data.get('machine_public_key')
-                or client_pub_key_fallback
-            )
-
-        if not machine_pub_key:
-            try:
-                saved_key = SECryptoService.get_client_public_key('desktop')
-                if saved_key:
-                    machine_pub_key = saved_key
-            except Exception as e:
-                logger.warning(f"Erro ao recuperar chave pública salva de desktop: {e}")
+            machine_pub_key = data.get('machine_public_key')
 
         if not machine_pub_key:
             raise ValidationError({
@@ -120,34 +109,19 @@ class ElectionActions:
         ballot_repr = json.dumps(ballot, sort_keys=True)
         college_repr = json.dumps(electoral_college, sort_keys=True)
 
-        candidate_payloads = [
-            f"{title}:{public_key}:{key_handle}".encode('utf-8'),
-            f"{title}:{key_handle}".encode('utf-8'),
-            f"{title}:{ballot_repr}:{college_repr}:{public_key}:{key_handle}".encode('utf-8'),
-            json.dumps({
-                "public_key": public_key,
-                "electoral_college": electoral_college,
-                "ballot": ballot,
-                "key_handle": key_handle,
-                "title": title
-            }, sort_keys=True).encode('utf-8'),
-            title.encode('utf-8')
-        ]
-
         full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
+        # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
         full_payload.pop('machine_user', None)
+        full_payload.pop('machine_public_key', None)
 
-        is_valid_sig = any(
-            SECryptoService.verify_signature(machine_pub_key, cand, machine_signature)
-            for cand in candidate_payloads
-        ) or SECryptoService.verify_payload_signature(machine_pub_key, full_payload)
+        is_valid_sig = SECryptoService.verify_payload_signature(machine_pub_key, full_payload)
 
         if not is_valid_sig:
             raise ValidationError({
                 "signature": _("Physical machine signature is invalid or payload does not match.")
             })
 
-        # Resolve creator user by authentication, machine_public_key, or desktop_public_key.txt
+        # Resolve creator user by authentication or machine_public_key
         creator_user = user if (user and user.is_authenticated) else None
         if not creator_user and machine_pub_key:
             if isinstance(machine_pub_key, str):
@@ -158,32 +132,6 @@ class ElectionActions:
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
                 creator_user = User.objects.filter(machine_public_key=pem_str).first()
-
-        if not creator_user:
-            pub_key_path = Path(getattr(settings, 'BASE_DIR', Path.cwd())) / 'desktop_public_key.txt'
-            if pub_key_path.exists():
-                try:
-                    with open(pub_key_path, 'r', encoding='utf-8') as f:
-                        file_key = f.read().strip()
-                    if file_key:
-                        creator_user = User.objects.filter(machine_public_key=file_key).first()
-                except Exception as e:
-                    logger.warning(f"Erro ao ler desktop_public_key.txt para vincular criador: {e}")
-
-        if not creator_user:
-            try:
-                loaded_key = SECryptoService.get_client_public_key('desktop')
-                if loaded_key:
-                    if hasattr(loaded_key, 'public_bytes'):
-                        pem_str = loaded_key.public_bytes(
-                            encoding=serialization.Encoding.PEM,
-                            format=serialization.PublicFormat.SubjectPublicKeyInfo
-                        ).decode('utf-8').strip()
-                        creator_user = User.objects.filter(machine_public_key=pem_str).first()
-                    elif isinstance(loaded_key, str):
-                        creator_user = User.objects.filter(machine_public_key=loaded_key.strip()).first()
-            except Exception as e:
-                logger.warning(f"Erro ao recuperar chave do desktop para creator_user: {e}")
 
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():

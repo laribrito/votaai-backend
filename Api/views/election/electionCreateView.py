@@ -40,14 +40,12 @@ class ElectionCreateView(APIView):
         serializer = ElectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        client_pub_key_fallback = getattr(request, '_client_public_key', None)
         user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
 
         result = ElectionActions.criarEleicao(
             serializer.validated_data,
             raw_data=request.data,
-            user=user,
-            client_pub_key_fallback=client_pub_key_fallback
+            user=user
         )
 
         return Response(result, status=status.HTTP_200_OK)
