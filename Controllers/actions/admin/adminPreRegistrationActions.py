@@ -57,7 +57,7 @@ class AdminPreRegistrationActions:
         machine_public_key = machine_public_key.strip().replace('\r\n', '\n')
 
         if not machine_user:
-            raise ValidationError({"machine_user": _("Machine user identifier is required.")})
+            raise ValidationError({"device_id": _("Device ID is required.")})
 
         # 1. Valida se o usuário de máquina já está vinculado a outro usuário ativo
         existing_machine_user = User.objects.filter(
@@ -66,7 +66,7 @@ class AdminPreRegistrationActions:
         ).exclude(email=email).first()
         if existing_machine_user:
             raise ValidationError({
-                "machine_user": _("This machine (%(machine_user)s) is already linked to another active user (%(email)s).") % {
+                "device_id": _("This machine (%(machine_user)s) is already linked to another active user (%(email)s).") % {
                     'machine_user': machine_user,
                     'email': existing_machine_user.email,
                 }
@@ -163,7 +163,7 @@ class AdminPreRegistrationActions:
             ).exclude(id=user.id).first()
             if conflict_user:
                 raise ValidationError({
-                    "machine_user": _("This machine (%(machine_user)s) has already been activated by another user (%(email)s).") % {
+                    "device_id": _("This machine (%(machine_user)s) has already been activated by another user (%(email)s).") % {
                         'machine_user': user.machine_user,
                         'email': conflict_user.email,
                     }

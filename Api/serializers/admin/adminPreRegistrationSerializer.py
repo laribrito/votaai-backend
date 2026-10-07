@@ -51,6 +51,16 @@ class AdminPreRegistrationConfirmSerializer(serializers.Serializer):
         required=True,
         error_messages={'required': _('Machine digital signature is required.')}
     )
+    machine_public_key = serializers.CharField(
+        required=False,
+        write_only=True,
+        help_text='Machine RSA public key in PEM format.'
+    )
+    client_public_key = serializers.CharField(
+        required=False,
+        write_only=True,
+        help_text='Sent by desktop as duplicate of machine_public_key.'
+    )
 
 
 class AdminPreRegistrationStartResponseSerializer(serializers.Serializer):
