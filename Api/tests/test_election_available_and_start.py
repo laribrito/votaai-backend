@@ -20,7 +20,6 @@ class ElectionAvailableAndStartTests(APITestCase):
     def setUp(self):
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
-        self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
 
         if not os.path.exists(keys_path):
             self.skipTest("Arquivo se_keys_info.json não encontrado. Execute generate_se_keys primeiro.")
@@ -47,19 +46,6 @@ class ElectionAvailableAndStartTests(APITestCase):
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8')
-
-        self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
-        self._original_client_key_content = None
-        if os.path.exists(self.client_key_file):
-            try:
-                with open(self.client_key_file, 'r', encoding='utf-8') as f:
-                    self._original_client_key_content = f.read()
-            except Exception:
-                pass
-
-        # Salva chave do cliente para o middleware
-        with open(self.client_key_file, 'w', encoding='utf-8') as f:
-            f.write(self.machine_public_pem)
 
         # Cria usuário associado à máquina
         self.user = User.objects.create_user(
@@ -96,19 +82,6 @@ class ElectionAvailableAndStartTests(APITestCase):
 
         self.url_available = reverse('election-available')
         self.url_start = reverse('election-start')
-
-    def tearDown(self):
-        if self._original_client_key_content is not None:
-            try:
-                with open(self.client_key_file, 'w', encoding='utf-8') as f:
-                    f.write(self._original_client_key_content)
-            except Exception:
-                pass
-        elif os.path.exists(self.client_key_file):
-            try:
-                os.remove(self.client_key_file)
-            except Exception:
-                pass
 
     def _encrypt_request_body(self, payload_dict: dict) -> dict:
         json_bytes = json.dumps(payload_dict).encode('utf-8')
@@ -152,7 +125,8 @@ class ElectionAvailableAndStartTests(APITestCase):
         nonce = "test-nonce-12345"
         payload = {
             "msg": "FETCH_AVAILABLE",
-            "nonceClient1": nonce
+            "nonceClient1": nonce,
+            "machine_public_key": self.machine_public_pem
         }
         enc_body = self._encrypt_request_body(payload)
         response = self.client.post(self.url_available, data=enc_body, format='json')
@@ -193,7 +167,8 @@ class ElectionAvailableAndStartTests(APITestCase):
         nonce = "test-nonce-strict"
         payload = {
             "msg": "FETCH_AVAILABLE",
-            "nonceClient1": nonce
+            "nonceClient1": nonce,
+            "machine_public_key": self.machine_public_pem
         }
         enc_body = self._encrypt_request_body(payload)
         response = self.client.post(self.url_available, data=enc_body, format='json')
@@ -209,9 +184,10 @@ class ElectionAvailableAndStartTests(APITestCase):
         payload = {
             "msg": "START_ELECTION",
             "keyHandle": self.key_handle,
-            "nonceClient2": nonce
+            "nonceClient2": nonce,
+            "machine_public_key": self.machine_public_pem
         }
-        # Assina com chave da eleição
+        # Assina estritamente o payload canônico com a chave privada da eleição
         payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
         sig_bytes = self.election_private_key.sign(
             payload_str.encode('utf-8'),
@@ -227,6 +203,9 @@ class ElectionAvailableAndStartTests(APITestCase):
         decrypted_resp = self._decrypt_response_body(response)
         self.assertEqual(decrypted_resp.get("nonceClient2"), nonce)
         self.assertIn("hora_registrada", decrypted_resp)
+        self.assertEqual(decrypted_resp.get("emails_enviados"), 1)
+        self.assertEqual(decrypted_resp.get("total_colegio"), 1)
+        self.assertEqual(decrypted_resp.get("titulo"), "Eleição Teste Disponível")
 
         self.election.refresh_from_db()
         self.assertEqual(self.election.status, ElectionStatus.STARTED)
@@ -254,3 +233,68 @@ class ElectionAvailableAndStartTests(APITestCase):
         self.assertIn("acessar a página de divulgação", html_content)
         self.assertNotIn("Se você não solicitou este e-mail", html_content)
         self.assertNotIn("Se você não solicitou este e-mail", sent_mail.body)
+
+    def test_start_election_missing_signature_fails_401(self):
+        nonce = "test-nonce-missing-sig"
+        payload = {
+            "msg": "START_ELECTION",
+            "keyHandle": self.key_handle,
+            "nonceClient2": nonce,
+            "machine_public_key": self.machine_public_pem
+        }
+        enc_body = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_start, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        decrypted_resp = self._decrypt_response_body(response)
+        self.assertIn("error", decrypted_resp)
+        self.assertEqual(decrypted_resp.get("nonceClient2"), nonce)
+
+    def test_start_election_invalid_signature_fails_403(self):
+        nonce = "test-nonce-bad-sig"
+        other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        payload = {
+            "msg": "START_ELECTION",
+            "keyHandle": self.key_handle,
+            "nonceClient2": nonce,
+            "machine_public_key": self.machine_public_pem
+        }
+        payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        forged_sig = other_key.sign(payload_str.encode('utf-8'), padding.PKCS1v15(), hashes.SHA256())
+        payload["election_signature"] = base64.b64encode(forged_sig).decode('utf-8')
+
+        enc_body = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_start, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        decrypted_resp = self._decrypt_response_body(response)
+        self.assertIn("error", decrypted_resp)
+        self.assertEqual(decrypted_resp.get("nonceClient2"), nonce)
+
+    def test_start_election_nonexistent_or_already_started_fails_404(self):
+        nonce = "test-nonce-notfound"
+        payload = {
+            "msg": "START_ELECTION",
+            "keyHandle": "nonexistent_key_handle",
+            "nonceClient2": nonce,
+            "machine_public_key": self.machine_public_pem
+        }
+        payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        sig_bytes = self.election_private_key.sign(payload_str.encode('utf-8'), padding.PKCS1v15(), hashes.SHA256())
+        payload["election_signature"] = base64.b64encode(sig_bytes).decode('utf-8')
+
+        enc_body = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_start, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        decrypted_resp = self._decrypt_response_body(response)
+        self.assertIn("error", decrypted_resp)
+        self.assertEqual(decrypted_resp.get("nonceClient2"), nonce)
+
+    def test_request_without_machine_public_key_fails_400(self):
+        payload = {
+            "msg": "FETCH_AVAILABLE",
+            "nonceClient1": "nonce-no-key"
+        }
+        enc_body = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_available, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        response_json = response.json()
+        self.assertIn("error", response_json)
