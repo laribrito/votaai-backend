@@ -109,11 +109,7 @@ class ElectionActions:
         ballot_repr = json.dumps(ballot, sort_keys=True)
         college_repr = json.dumps(electoral_college, sort_keys=True)
 
-        full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
-        # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
-        full_payload.pop('machine_user', None)
-        full_payload.pop('machine_public_key', None)
-
+        full_payload = raw_data if isinstance(raw_data, dict) else data
         is_valid_sig = SECryptoService.verify_payload_signature(machine_pub_key, full_payload)
 
         if not is_valid_sig:
