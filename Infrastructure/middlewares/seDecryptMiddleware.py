@@ -41,6 +41,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/groups',             # grupos
         '/api/permissions',        # permissões
         '/api/password',           # reset/gestão de senha
+        '/api/election/available', # listagem de eleições disponiveis
+        '/api/election/start',     # iniciar eleição
     )
 
     # Prefixos de rotas para Mobile usando a chave 2
@@ -82,23 +84,14 @@ class SEDecryptMiddleware(MiddlewareMixin):
         # Se houver corpo na requisição
         if request.body:
             try:
-                # O cliente envia um JSON contendo a string base64 criptografada
-                # Formato esperado: {"encrypted_payload": "...", "encrypted_aes_key": "...", ...}
+                # O cliente envia um JSON contendo o envelope híbrido criptografado.
+                # Formato externo: { "encrypted_payload": "...", "encrypted_aes_key": "...", "iv": "...", "tag": "..." }
+                # client_public_key e signature vêm DENTRO do payload cifrado, não no envelope externo.
                 body_data = json.loads(request.body)
                 encrypted_payload = body_data.get('encrypted_payload')
                 encrypted_aes_key = body_data.get('encrypted_aes_key')
                 iv = body_data.get('iv')
                 tag = body_data.get('tag')
-                client_public_key = body_data.get('client_public_key')
-
-                # Se a chave pública do cliente veio dentro do envelope JSON da requisição, salva
-                if client_public_key:
-                    request._client_public_key = client_public_key
-                    if device_type:
-                        try:
-                            SECryptoService.save_client_public_key(device_type, client_public_key)
-                        except Exception as e:
-                            logger.warning(f"Não foi possível salvar chave pública enviada no body: {e}")
 
                 if not encrypted_payload:
                     return JsonResponse({'error': 'Payload criptografado não encontrado. Envie no campo "encrypted_payload".'}, status=400)
@@ -122,13 +115,52 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 decrypted_json_bytes = aesgcm.decrypt(iv_bytes, ciphertext, None)
                 decrypted_json_str = decrypted_json_bytes.decode('utf-8')
                 
-                # Valida se o texto devolvido pelo TPM é um JSON válido
-                json.loads(decrypted_json_str)
-                
-                # Sobrescreve o corpo da requisição com os dados em texto claro.
-                # Dessa forma, as Views (Controllers) não precisam saber de criptografia.
-                request._body = decrypted_json_str.encode('utf-8')
-                
+                # 2. Valida e parseia o payload descriptografado
+                decrypted_payload = json.loads(decrypted_json_str)
+
+                # 3. Extrai client_public_key obrigatoriamente de DENTRO do payload descriptografado
+                client_public_key_pem = decrypted_payload.get('machine_public_key')
+                if client_public_key_pem:
+                    request._client_public_key = client_public_key_pem
+
+                # 4. Extrai e preserva qualquer nonce enviado no envelope externo ou no payload
+                nonce_value = None
+                nonce_key = None
+                for k, v in decrypted_payload.items():
+                    if 'nonce' in k.lower():
+                        nonce_value = v
+                        nonce_key = k
+                        break
+
+                if not nonce_value:
+                    for k, v in body_data.items():
+                        if 'nonce' in k.lower():
+                            nonce_value = v
+                            nonce_key = k
+                            break
+
+                if nonce_value is not None:
+                    request._nonce = nonce_value
+                    request._nonce_key = nonce_key
+
+                # 5. A chave pública para verificar a assinatura deve estar presente na requisição.
+                verify_pub_key = client_public_key_pem
+
+                # 6. Verifica a assinatura RSA-PSS injetada pelo desktop antes de cifrar (Sign-then-Encrypt).
+                if verify_pub_key and 'signature' in decrypted_payload:
+                    is_valid_envelope = SECryptoService.verify_payload_signature(verify_pub_key, decrypted_payload)
+                    request._envelope_signature_valid = is_valid_envelope
+                    if not is_valid_envelope and path.startswith('/api/admin/pre-registration/start'):
+                        logger.warning(f"Assinatura RSA-PSS de envelope inválida para {device_type} em {path}.")
+                        return JsonResponse(
+                            {'error': 'Assinatura digital inválida ou ausente. Requisição rejeitada.'},
+                            status=403
+                        )
+
+                # 7. Sobrescreve o corpo da requisição com os dados em texto claro.
+                #    Dessa forma, as Views (Controllers) não precisam saber de criptografia.
+                request._body = json.dumps(decrypted_payload).encode('utf-8')
+
                 # Forçamos o Content-Type para json para evitar problemas nos parsers do Django
                 request.META['CONTENT_TYPE'] = 'application/json'
 
@@ -176,7 +208,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
             if req_client_pub_key:
                 client_pub_key = SECryptoService.load_rsa_public_key(req_client_pub_key)
             else:
-                client_pub_key = SECryptoService.get_client_public_key(device_type)
+                client_pub_key = None
 
             if not client_pub_key:
                 return JsonResponse({
@@ -186,6 +218,13 @@ class SEDecryptMiddleware(MiddlewareMixin):
             # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA
             encrypted_data = SECryptoService.encrypt_response_hybrid(client_pub_key, response.content)
             
+            # Se havia um nonce no request, inclui também no envelope de resposta para clientes que validam o envelope externo
+            nonce_val = getattr(request, '_nonce', None)
+            if nonce_val is not None:
+
+                if getattr(request, '_nonce_key', None):
+                    encrypted_data[request._nonce_key] = nonce_val
+
             encrypted_json_bytes = json.dumps(encrypted_data).encode('utf-8')
             response.content = encrypted_json_bytes
             response['Content-Type'] = 'application/json'

@@ -188,3 +188,4 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@myapp.com')
 # INTEGRAÇÃO COM O FRONTEND
 # ==============================================================================
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/eleicoes')

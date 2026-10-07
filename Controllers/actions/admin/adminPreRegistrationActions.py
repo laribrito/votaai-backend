@@ -30,7 +30,7 @@ class AdminPreRegistrationActions:
         email = data.get('email', '').strip()
         password = data.get('password')
         machine_public_key = data.get('machine_public_key')
-        machine_user = data.get('machine_user', '').strip()
+        machine_user = str(data.get('device_id') or '').strip()
 
         if not email:
             raise ValidationError({"email": _("Email is required.")})
@@ -57,7 +57,7 @@ class AdminPreRegistrationActions:
         machine_public_key = machine_public_key.strip().replace('\r\n', '\n')
 
         if not machine_user:
-            raise ValidationError({"machine_user": _("Machine user identifier is required.")})
+            raise ValidationError({"device_id": _("Device ID is required.")})
 
         # 1. Valida se o usuário de máquina já está vinculado a outro usuário ativo
         existing_machine_user = User.objects.filter(
@@ -66,7 +66,7 @@ class AdminPreRegistrationActions:
         ).exclude(email=email).first()
         if existing_machine_user:
             raise ValidationError({
-                "machine_user": _("This machine (%(machine_user)s) is already linked to another active user (%(email)s).") % {
+                "device_id": _("This machine (%(machine_user)s) is already linked to another active user (%(email)s).") % {
                     'machine_user': machine_user,
                     'email': existing_machine_user.email,
                 }
@@ -124,7 +124,7 @@ class AdminPreRegistrationActions:
         }
 
     @staticmethod
-    def confirmPreRegistration(data: dict) -> dict:
+    def confirmPreRegistration(data: dict, raw_data: dict | None = None) -> dict:
         """
         Passo 3 e 4 do fluxo:
         - Recebe email, totp_code e signature da máquina
@@ -163,7 +163,7 @@ class AdminPreRegistrationActions:
             ).exclude(id=user.id).first()
             if conflict_user:
                 raise ValidationError({
-                    "machine_user": _("This machine (%(machine_user)s) has already been activated by another user (%(email)s).") % {
+                    "device_id": _("This machine (%(machine_user)s) has already been activated by another user (%(email)s).") % {
                         'machine_user': user.machine_user,
                         'email': conflict_user.email,
                     }
@@ -182,8 +182,8 @@ class AdminPreRegistrationActions:
                 })
 
         # 1. Valida assinatura da máquina
-        data_to_verify = f"{email}:{totp_code}".encode('utf-8')
-        is_signature_valid = SECryptoService.verify_signature(user.machine_public_key, data_to_verify, signature)
+        full_payload = raw_data if isinstance(raw_data, dict) else data
+        is_signature_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
 
         if not is_signature_valid:
             raise ValidationError({"signature": _("Invalid machine signature or unauthorized key.")})

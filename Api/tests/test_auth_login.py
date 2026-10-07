@@ -21,7 +21,6 @@ class AuthLoginTests(APITestCase):
     def setUp(self):
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
-        self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
 
         if not os.path.exists(keys_path):
             self.skipTest("Arquivo se_keys_info.json não encontrado. Execute generate_se_keys primeiro.")
@@ -81,12 +80,31 @@ class AuthLoginTests(APITestCase):
 
         self.url_login = reverse('auth-login')
 
-    def tearDown(self):
-        if os.path.exists(self.client_key_file):
-            os.remove(self.client_key_file)
+    def _sign_payload(self, payload_dict: dict, private_key=None) -> str:
+        """Assina o payload canônico em formato JSON estrito usando RSA-PSS."""
+        key = private_key or self.machine_private_key
+        canonical_dict = {k: v for k, v in payload_dict.items() if k != 'signature'}
+        canonical_bytes = json.dumps(
+            canonical_dict,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+        sig_bytes = key.sign(
+            canonical_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return base64.b64encode(sig_bytes).decode('utf-8')
 
     def _encrypt_request_body(self, payload_dict: dict) -> dict:
         payload_copy = dict(payload_dict)
+        if 'machine_public_key' not in payload_copy:
+            payload_copy['machine_public_key'] = self.machine_public_pem
+
         json_bytes = json.dumps(payload_copy).encode('utf-8')
         aes_key = os.urandom(32)
         iv = os.urandom(12)
@@ -130,21 +148,14 @@ class AuthLoginTests(APITestCase):
 
     def test_login_success_with_valid_totp_and_signature(self):
         totp_code = TOTPService.generate_totp(self.totp_secret)
-        payload_to_sign = f"{self.admin_email}:{totp_code}".encode('utf-8')
-        signature_bytes = self.machine_private_key.sign(
-            payload_to_sign,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature = base64.b64encode(signature_bytes).decode('utf-8')
-
         payload = {
             "username": self.admin_email,
             "password": self.password,
             "totp_code": totp_code,
-            "signature": signature,
-            "machine_user": self.device_id
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
@@ -157,21 +168,14 @@ class AuthLoginTests(APITestCase):
 
     def test_login_fails_with_invalid_totp(self):
         invalid_totp = "000000"
-        payload_to_sign = f"{self.admin_email}:{invalid_totp}".encode('utf-8')
-        signature_bytes = self.machine_private_key.sign(
-            payload_to_sign,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature = base64.b64encode(signature_bytes).decode('utf-8')
-
         payload = {
             "username": self.admin_email,
             "password": self.password,
             "totp_code": invalid_totp,
-            "signature": signature,
-            "machine_user": self.device_id
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
@@ -184,7 +188,8 @@ class AuthLoginTests(APITestCase):
         payload = {
             "username": self.admin_email,
             "password": self.password,
-            "machine_user": self.device_id
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
         }
 
         enc_req = self._encrypt_request_body(payload)
@@ -198,21 +203,14 @@ class AuthLoginTests(APITestCase):
         totp_code = TOTPService.generate_totp(self.totp_secret)
         # Assina com outra chave privada não cadastrada
         rogue_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        payload_to_sign = f"{self.admin_email}:{totp_code}".encode('utf-8')
-        signature_bytes = rogue_key.sign(
-            payload_to_sign,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature = base64.b64encode(signature_bytes).decode('utf-8')
-
         payload = {
             "username": self.admin_email,
             "password": self.password,
             "totp_code": totp_code,
-            "signature": signature,
-            "machine_user": self.device_id
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload, private_key=rogue_key)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
@@ -223,33 +221,27 @@ class AuthLoginTests(APITestCase):
 
     def test_login_fails_with_unauthorized_machine(self):
         totp_code = TOTPService.generate_totp(self.totp_secret)
-        payload_to_sign = f"{self.admin_email}:{totp_code}".encode('utf-8')
-        signature_bytes = self.machine_private_key.sign(
-            payload_to_sign,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        signature = base64.b64encode(signature_bytes).decode('utf-8')
-
         payload = {
             "username": self.admin_email,
             "password": self.password,
             "totp_code": totp_code,
-            "signature": signature,
-            "machine_user": "rogue-unauthorized-machine-id"
+            "device_id": "rogue-unauthorized-machine-id",
+            "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("machine_user", resp_data)
+        self.assertIn("device_id", resp_data)
 
     def test_login_regular_user_without_totp_succeeds(self):
         payload = {
             "username": self.regular_email,
-            "password": self.regular_password
+            "password": self.regular_password,
+            "machine_public_key": self.machine_public_pem
         }
 
         enc_req = self._encrypt_request_body(payload)

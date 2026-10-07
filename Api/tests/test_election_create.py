@@ -15,6 +15,7 @@ from Domain.models.schemas.election.electionSchema import Election, ElectionStat
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.moderation.userSchema import User
 from Infrastructure.services.seCryptoService import SECryptoService
 
 
@@ -29,7 +30,6 @@ class ElectionCreateTests(APITestCase):
     def setUp(self):
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
-        self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
 
         if not os.path.exists(keys_path):
             self.skipTest("Arquivo se_keys_info.json não encontrado. Execute generate_se_keys primeiro.")
@@ -57,15 +57,17 @@ class ElectionCreateTests(APITestCase):
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8')
 
+        # Cria usuário associado à máquina física para validação de vínculo obrigatório
+        self.user = User.objects.create_user(
+            username='admin.desktop@votaai.org',
+            email='admin.desktop@votaai.org',
+            password='Password123!',
+            is_active=True,
+            machine_public_key=self.machine_public_pem.strip()
+        )
+
         # URL da rota de criação de eleição
         self.url_create = reverse('election-create')
-
-    def tearDown(self):
-        if os.path.exists(self.client_key_file):
-            try:
-                os.remove(self.client_key_file)
-            except Exception:
-                pass
 
     def _encrypt_request_body(self, payload_dict: dict) -> dict:
         """Simula o cliente Desktop cifrando a requisição com a chave pública do servidor no TPM."""
@@ -155,19 +157,17 @@ class ElectionCreateTests(APITestCase):
             }
         ]
 
-        # Assinatura gerada pela máquina física sobre os dados canônicos
-        payload_to_sign = f"{titulo}:{chave_publica_eleicao}:{key_handle}".encode('utf-8')
-        machine_signature = self._sign_with_machine_key(payload_to_sign)
-
         req_payload = {
             "title": titulo,
             "ballot": cedula,
             "electoral_college": colegiado,
             "public_key": chave_publica_eleicao,
             "key_handle": key_handle,
-            "signature": machine_signature,
             "machine_public_key": self.machine_public_pem
         }
+        canonical_bytes = json.dumps(req_payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        machine_signature = self._sign_with_machine_key(canonical_bytes)
+        req_payload["signature"] = machine_signature
 
         # Cifra envelope para o servidor
         encrypted_body = self._encrypt_request_body(req_payload)
@@ -208,6 +208,7 @@ class ElectionCreateTests(APITestCase):
         self.assertEqual(election.title, titulo)
         self.assertEqual(election.key_handle, key_handle)
         self.assertEqual(election.status, ElectionStatus.CREATED)
+        self.assertEqual(election.created_by, self.user)
         self.assertEqual(election.questions_count, 2)
         self.assertEqual(election.options_count, 5)
 

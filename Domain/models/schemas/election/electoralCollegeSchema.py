@@ -48,6 +48,17 @@ class ElectoralCollege(ElectoralCollegeProxy, TimestampSchemaMixin):
         default=False,
         help_text=_('Indicates whether this voter has already cast their ballot')
     )
+    email_sent = models.BooleanField(
+        _('email sent'),
+        default=False,
+        help_text=_('Indicates whether the voting email has been sent to this voter')
+    )
+    email_sent_at = models.DateTimeField(
+        _('email sent at'),
+        null=True,
+        blank=True,
+        help_text=_('Timestamp of the last email sent to this voter')
+    )
     election = models.ForeignKey(
         'Domain.Election',
         on_delete=models.CASCADE,
