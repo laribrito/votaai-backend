@@ -182,11 +182,7 @@ class AdminPreRegistrationActions:
                 })
 
         # 1. Valida assinatura da máquina
-        full_payload = dict(raw_data if isinstance(raw_data, dict) else data)
-        # Remove aliases injected by middleware so the signature matches the exact payload sent by desktop
-        full_payload.pop('machine_user', None)
-        full_payload.pop('machine_public_key', None)
-        
+        full_payload = raw_data if isinstance(raw_data, dict) else data
         is_signature_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
 
         if not is_signature_valid:
