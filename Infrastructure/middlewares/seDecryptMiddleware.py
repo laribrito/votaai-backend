@@ -122,10 +122,6 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 client_public_key_pem = decrypted_payload.get('machine_public_key')
                 if client_public_key_pem:
                     request._client_public_key = client_public_key_pem
-                    try:
-                        SECryptoService.save_client_public_key(device_type, client_public_key_pem)
-                    except Exception as e:
-                        logger.warning(f"Não foi possível salvar chave pública extraída do payload: {e}")
 
                 # 4. Extrai e preserva qualquer nonce enviado no envelope externo ou no payload
                 nonce_value = None
@@ -147,9 +143,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
                     request._nonce = nonce_value
                     request._nonce_key = nonce_key
 
-                # 5. Resolve qual chave pública usar para verificar a assinatura RSA-PSS.
-                #    Prioridade: chave recém-recebida no payload > chave salva em disco.
-                verify_pub_key = client_public_key_pem or SECryptoService.get_client_public_key(device_type)
+                # 5. A chave pública para verificar a assinatura deve estar presente na requisição.
+                verify_pub_key = client_public_key_pem
 
                 # 6. Verifica a assinatura RSA-PSS injetada pelo desktop antes de cifrar (Sign-then-Encrypt).
                 if verify_pub_key and 'signature' in decrypted_payload:
@@ -213,7 +208,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
             if req_client_pub_key:
                 client_pub_key = SECryptoService.load_rsa_public_key(req_client_pub_key)
             else:
-                client_pub_key = SECryptoService.get_client_public_key(device_type)
+                client_pub_key = None
 
             if not client_pub_key:
                 return JsonResponse({
