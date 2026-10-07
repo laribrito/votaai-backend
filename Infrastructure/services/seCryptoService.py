@@ -338,20 +338,6 @@ class SECryptoService:
                 ncrypt.NCryptFreeObject(hProv)
 
     @classmethod
-    def _get_key_file_path(cls, device_type: str = 'desktop') -> Path:
-        base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
-        return Path(base_dir) / f"{device_type}_public_key.txt"
-
-    @classmethod
-    def save_client_public_key(cls, device_type: str, key_data: str) -> None:
-        """
-        Salva a chave pública do cliente em arquivo de texto.
-        """
-        file_path = cls._get_key_file_path(device_type)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(key_data.strip())
-
-    @classmethod
     def load_rsa_public_key(cls, key_data: str | bytes):
         """
         Carrega chave pública RSA suportando PEM, DER (Base64) e BCRYPT_RSAKEY_BLOB (CNG).
@@ -377,39 +363,6 @@ class SECryptoService:
 
         # Tenta DER padrão
         return serialization.load_der_public_key(key_bytes)
-
-    @classmethod
-    def get_client_public_key(cls, device_type: str = 'desktop'):
-        """
-        Lê e faz o parse da chave pública do cliente salva no arquivo txt.
-        Se não existir em disco, tenta resgatar do banco de dados (User).
-        Retorna None se não for encontrada.
-        """
-        file_path = cls._get_key_file_path(device_type)
-        if file_path.exists():
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-            if content:
-                try:
-                    return cls.load_rsa_public_key(content)
-                except Exception:
-                    pass
-
-        # Fallback: busca chave cadastrada no modelo User se for desktop
-        if device_type == 'desktop':
-            try:
-                from Domain.models.schemas.moderation.userSchema import User
-                user_with_key = User.objects.filter(machine_public_key__isnull=False, is_active=True).exclude(machine_public_key='').first()
-                if user_with_key and user_with_key.machine_public_key:
-                    try:
-                        cls.save_client_public_key(device_type, user_with_key.machine_public_key)
-                    except Exception:
-                        pass
-                    return cls.load_rsa_public_key(user_with_key.machine_public_key)
-            except Exception:
-                pass
-
-        return None
 
     @classmethod
     def encrypt_response_hybrid(cls, public_key, data_bytes: bytes) -> dict:
