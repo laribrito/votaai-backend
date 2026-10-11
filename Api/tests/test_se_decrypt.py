@@ -16,11 +16,6 @@ class SEDecryptMiddlewareTests(APITestCase):
         # Lê a chave pública gerada anteriormente do se_keys_info.json na raiz do projeto
         base_dir = getattr(settings, 'BASE_DIR', Path.cwd())
         keys_path = os.path.join(base_dir, 'se_keys_info.json')
-        self.client_key_file = os.path.join(base_dir, 'desktop_public_key.txt')
-        
-        # Limpa arquivo de chave anterior se existir
-        if os.path.exists(self.client_key_file):
-            os.remove(self.client_key_file)
         
         if not os.path.exists(keys_path):
             self.skipTest("Arquivo se_keys_info.json não encontrado. Rode 'manage.py generate_se_keys' primeiro.")
@@ -46,9 +41,6 @@ class SEDecryptMiddlewareTests(APITestCase):
         self.backend_public_key = rsa.RSAPublicNumbers(e, n).public_key()
         self.url = reverse('ping-desktop')
 
-    def tearDown(self):
-        if os.path.exists(self.client_key_file):
-            os.remove(self.client_key_file)
 
     def test_ping_desktop_without_client_key_returns_400_error(self):
         """
@@ -106,7 +98,8 @@ class SEDecryptMiddlewareTests(APITestCase):
         original_request = {
             "acao": "pre_cadastro_admin",
             "admin_email": "admin@votaai.org",
-            "token_solicitacao": "xyz-789"
+            "token_solicitacao": "xyz-789",
+            "machine_public_key": client_public_pem
         }
         json_request_bytes = json.dumps(original_request).encode('utf-8')
 
@@ -135,12 +128,6 @@ class SEDecryptMiddlewareTests(APITestCase):
         # 4. Envia a chamada HTTP
         response = self.client.post(self.url, data=body, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        # 5. Verifica se o arquivo desktop_public_key.txt foi gerado na raiz
-        self.assertTrue(os.path.exists(self.client_key_file), "Arquivo desktop_public_key.txt não foi criado!")
-        with open(self.client_key_file, 'r', encoding='utf-8') as f:
-            saved_key = f.read().strip()
-        self.assertEqual(saved_key, client_public_pem.strip())
 
         # 6. Verifica se a resposta foi criptografada pelo backend
         encrypted_response_json = response.json()

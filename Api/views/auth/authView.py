@@ -37,7 +37,7 @@ class AuthViewSet(viewsets.ViewSet):
         inputSerializer.is_valid(raise_exception=True)
 
         # 2. Business Logic Execution
-        resultData = AuthActions.login(inputSerializer.validated_data)
+        resultData = AuthActions.login(inputSerializer.validated_data, raw_data=request.data)
 
         # 3. Output Formatting (Serialization)
         # We pass the raw objects to the Response Serializer to ensure the JSON matches the contract.
