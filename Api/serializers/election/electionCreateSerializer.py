@@ -62,10 +62,12 @@ class ElectionCreateSerializer(serializers.Serializer):
         help_text='End date and time of the election'
     )
     machine_public_key = serializers.CharField(
-        required=False,
-        default=None,
-        allow_null=True,
-        help_text='RSA public key of the physical machine.'
+        required=True,
+        error_messages={
+            'blank': 'The machine public key cannot be empty.',
+            'required': 'The machine public key is required.'
+        },
+        help_text='RSA public key of the physical machine in PEM format.'
     )
 
 

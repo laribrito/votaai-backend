@@ -31,9 +31,9 @@ class AvailableElectionsView(APIView):
             # 1. Identifica o usuário vinculado a esta máquina física
             user = request.user if (request.user and request.user.is_authenticated) else None
             if not user:
-                client_key = getattr(request, '_client_public_key', None)
-                if client_key:
-                    user = User.objects.filter(machine_public_key=str(client_key).strip()).first()
+                machine_key = getattr(request, '_machine_public_key', None)
+                if machine_key:
+                    user = User.objects.filter(machine_public_key=str(machine_key).strip()).first()
 
             # Retorna vazio se não houver usuário vinculado a esta máquina
             if not user:

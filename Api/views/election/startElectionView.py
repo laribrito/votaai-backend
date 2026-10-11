@@ -45,6 +45,7 @@ class StartElectionView(APIView):
             payload_to_verify = dict(payload)
             payload_to_verify.pop("election_signature", None)
             payload_to_verify.pop("signature", None)
+            payload_to_verify.pop("machine_public_key", None)
             payload_bytes = json.dumps(payload_to_verify, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
 
             if not SECryptoService.verify_signature(election.public_key, payload_bytes, election_signature):

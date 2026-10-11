@@ -184,10 +184,9 @@ class ElectionAvailableAndStartTests(APITestCase):
         payload = {
             "msg": "START_ELECTION",
             "keyHandle": self.key_handle,
-            "nonceClient2": nonce,
-            "machine_public_key": self.machine_public_pem
+            "nonceClient2": nonce
         }
-        # Assina estritamente o payload canônico com a chave privada da eleição
+        # Assina estritamente o payload canônico (campos de negócio) com a chave privada da eleição
         payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
         sig_bytes = self.election_private_key.sign(
             payload_str.encode('utf-8'),
@@ -195,6 +194,7 @@ class ElectionAvailableAndStartTests(APITestCase):
             hashes.SHA256()
         )
         payload["election_signature"] = base64.b64encode(sig_bytes).decode('utf-8')
+        payload["machine_public_key"] = self.machine_public_pem
 
         enc_body = self._encrypt_request_body(payload)
         response = self.client.post(self.url_start, data=enc_body, format='json')
