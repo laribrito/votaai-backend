@@ -1,3 +1,39 @@
+## 0.4.0 (2026-10-11)
+
+### Feat
+
+- **api**: implement available elections listing and start election endpoints
+- **controllers**: resolve election creator user and normalize voter details
+- **infrastructure**: add voting token service and enhance crypto middleware
+- **admin**: add email status display and resend action for electoral college
+- **migration**: add migrations for voting token and electoral college email status
+- **domain**: add voting token model and enhance electoral college tracking
+- **crypto**: implement strict payload signature verification
+
+### Refactor
+
+- **election**: standardize machine_public_key across election creation and start flows
+- **auth**: require strict device_id and machine_public_key on login
+- **admin**: enforce strict device_id and machine_public_key in pre-registration
+- **crypto**: standardize on machine_public_key in SEDecryptMiddleware
+- **domain**: rename user machine_user to device_id
+- **admin**: standardize device_id error key and support public keys in confirmation
+- **election**: remove legacy alias cleanup from payload verification
+- **auth**: remove legacy alias cleanup from payload verification
+- **admin**: remove legacy alias cleanup from payload verification
+- **crypto**: remove unused file persistence methods for client public key
+- **middleware**: remove client public key file persistence and fallback
+- **middleware**: remove payload and nonce aliasing
+- **election**: use proxy static method for first name extraction
+- **election**: remove signature verification fallbacks on create
+- **crypto**: enforce strict payload signature verification
+- **admin**: remove fallbacks e aliases no pré-cadastro
+- **election**: remove dict comprehension na extração de payload
+- **election**: remove fallback logic para chaves públicas
+- **auth**: padroniza campo device_id e remove flexibilidade no login
+- **admin**: update pre-registration serializer to match desktop payload
+- **controllers**: update actions and views to handle raw_data for signature validation
+
 ## 0.3.0 (2026-09-26)
 
 ### Feat
