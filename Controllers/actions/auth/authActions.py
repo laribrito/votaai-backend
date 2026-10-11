@@ -25,6 +25,7 @@ class AuthActions:
         totp_code = str(data.get('totp_code') or '').strip()
         signature = str(data.get('signature') or '').strip()
         device_id = str(data.get('device_id') or '').strip()
+        machine_public_key = str(data.get('machine_public_key') or '').strip().replace('\r\n', '\n')
 
         # 1. Validate Credentials using Django's internal QuerySet/Auth backend
         user = authenticate(username=username, password=password)
@@ -60,27 +61,34 @@ class AuthActions:
                     "totp_code": "Invalid or expired TOTP code. Please check your authenticator device's clock."
                 })
 
-        # 4. Validate Machine Identifier (if user is bound to a physical machine)
-        if user.machine_user:
-            if device_id and device_id != user.machine_user:
-                raise ValidationError({
-                    "device_id": f"Access denied: this machine ({device_id}) is not authorized for this administrator user."
-                })
+        # 4. Validate the bound device and machine public key
+        if not user.device_id or not user.machine_public_key:
+            raise ValidationError({
+                "device_id": "This user is not bound to a physical machine. Complete the administrator pre-registration first."
+            })
 
-        # 5. Validate Machine Hardware TPM Signature (if user is bound to machine public key)
-        if user.machine_public_key:
-            if device_id and not signature:
-                raise ValidationError({
-                    "signature": "The hardware security (TPM) signature is required for this device."
-                })
+        if device_id != user.device_id:
+            raise ValidationError({
+                "device_id": f"Access denied: this machine ({device_id}) is not authorized for this administrator user."
+            })
 
-            if signature:
-                full_payload = raw_data if isinstance(raw_data, dict) else data
-                is_sig_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
-                if not is_sig_valid:
-                    raise ValidationError({
-                        "signature": "Hardware security validation failed: machine digital signature is invalid or unauthorized."
-                    })
+        if machine_public_key != user.machine_public_key.strip().replace('\r\n', '\n'):
+            raise ValidationError({
+                "machine_public_key": "Access denied: the machine public key does not match the one registered for this user."
+            })
+
+        # 5. Validate Machine Hardware TPM Signature over the whole payload
+        if not signature:
+            raise ValidationError({
+                "signature": "The hardware security (TPM) signature is required for this device."
+            })
+
+        full_payload = raw_data if isinstance(raw_data, dict) else data
+        is_sig_valid = SECryptoService.verify_payload_signature(user.machine_public_key, full_payload)
+        if not is_sig_valid:
+            raise ValidationError({
+                "signature": "Hardware security validation failed: machine digital signature is invalid or unauthorized."
+            })
 
         # 6. Generate Token via Domain Service
         token = AuthService.generateTokenForUser(user)

@@ -63,7 +63,7 @@ class AuthLoginTests(APITestCase):
             password=self.password,
             is_active=True,
             machine_public_key=self.machine_public_pem,
-            machine_user=self.device_id,
+            device_id=self.device_id,
             totp_secret=self.totp_secret
         )
         self.admin_user.groups.add(self.admin_group)
@@ -123,8 +123,7 @@ class AuthLoginTests(APITestCase):
             "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
             "encrypted_aes_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
             "iv": base64.b64encode(iv).decode('utf-8'),
-            "tag": base64.b64encode(tag).decode('utf-8'),
-            "client_public_key": self.machine_public_pem
+            "tag": base64.b64encode(tag).decode('utf-8')
         }
 
     def _decrypt_response_body(self, response) -> dict:
@@ -191,6 +190,7 @@ class AuthLoginTests(APITestCase):
             "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
@@ -237,19 +237,19 @@ class AuthLoginTests(APITestCase):
         resp_data = self._decrypt_response_body(response)
         self.assertIn("device_id", resp_data)
 
-    def test_login_regular_user_without_totp_succeeds(self):
+    def test_login_fails_for_user_not_bound_to_machine(self):
         payload = {
             "username": self.regular_email,
             "password": self.regular_password,
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        payload["signature"] = self._sign_payload(payload)
 
         enc_req = self._encrypt_request_body(payload)
         response = self.client.post(self.url_login, enc_req, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
-        self.assertIn("token", resp_data)
-        self.assertIn("user", resp_data)
-        self.assertEqual(resp_data["user"]["email"], self.regular_email)
+        self.assertIn("device_id", resp_data)
 
