@@ -12,8 +12,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
     """
     Middleware que intercepta requisições e respostas:
     1. Descriptografa os dados de entrada usando as chaves privadas do TPM/Secure Element.
-    2. Registra e salva a chave pública do cliente Desktop/Mobile enviada na requisição.
-    3. Criptografa os dados de retorno (response) usando a chave pública do cliente.
+    2. Registra a chave pública da máquina (machine_public_key) enviada dentro do payload.
+    3. Criptografa os dados de retorno (response) usando a machine_public_key.
     """
 
     # Rotas de infraestrutura e documentação que não passam por criptografia de hardware
@@ -86,7 +86,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
             try:
                 # O cliente envia um JSON contendo o envelope híbrido criptografado.
                 # Formato externo: { "encrypted_payload": "...", "encrypted_aes_key": "...", "iv": "...", "tag": "..." }
-                # client_public_key e signature vêm DENTRO do payload cifrado, não no envelope externo.
+                # machine_public_key e signature vêm DENTRO do payload cifrado, não no envelope externo.
                 body_data = json.loads(request.body)
                 encrypted_payload = body_data.get('encrypted_payload')
                 encrypted_aes_key = body_data.get('encrypted_aes_key')
@@ -118,10 +118,10 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 # 2. Valida e parseia o payload descriptografado
                 decrypted_payload = json.loads(decrypted_json_str)
 
-                # 3. Extrai client_public_key obrigatoriamente de DENTRO do payload descriptografado
-                client_public_key_pem = decrypted_payload.get('machine_public_key')
-                if client_public_key_pem:
-                    request._client_public_key = client_public_key_pem
+                # 3. Extrai machine_public_key obrigatoriamente de DENTRO do payload descriptografado
+                machine_public_key_pem = decrypted_payload.get('machine_public_key')
+                if machine_public_key_pem:
+                    request._machine_public_key = machine_public_key_pem
 
                 # 4. Extrai e preserva qualquer nonce enviado no envelope externo ou no payload
                 nonce_value = None
@@ -144,7 +144,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
                     request._nonce_key = nonce_key
 
                 # 5. A chave pública para verificar a assinatura deve estar presente na requisição.
-                verify_pub_key = client_public_key_pem
+                verify_pub_key = machine_public_key_pem
 
                 # 6. Verifica a assinatura RSA-PSS injetada pelo desktop antes de cifrar (Sign-then-Encrypt).
                 if verify_pub_key and 'signature' in decrypted_payload:
@@ -204,15 +204,15 @@ class SEDecryptMiddleware(MiddlewareMixin):
             return response
 
         try:
-            req_client_pub_key = getattr(request, '_client_public_key', None)
-            if req_client_pub_key:
-                client_pub_key = SECryptoService.load_rsa_public_key(req_client_pub_key)
+            req_machine_pub_key = getattr(request, '_machine_public_key', None)
+            if req_machine_pub_key:
+                client_pub_key = SECryptoService.load_rsa_public_key(req_machine_pub_key)
             else:
                 client_pub_key = None
 
             if not client_pub_key:
                 return JsonResponse({
-                    'error': f'Chave pública do cliente ({device_type}) não encontrada. Envie sua chave pública no campo "client_public_key".'
+                    'error': f'Chave pública da máquina ({device_type}) não encontrada. Envie sua chave pública no campo "machine_public_key".'
                 }, status=400)
 
             # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA
