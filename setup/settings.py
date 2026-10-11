@@ -186,7 +186,10 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@myapp.com')
 
 # ==============================================================================
-# INTEGRAÇÃO COM O FRONTEND
+# INTEGRAÇÃO COM FRONTEND / MOBILE
 # ==============================================================================
-FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/eleicoes')
+
+# Link / Deep Link de votação para aplicativo mobile (desacoplado; padrão: votaai://votar/?token=)
+# Suporta prefixo com query param (ex: votaai://votar/?token=), path com barra ou template {token}
+MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')

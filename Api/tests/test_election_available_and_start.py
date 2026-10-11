@@ -222,12 +222,13 @@ class ElectionAvailableAndStartTests(APITestCase):
         self.assertIn("carlos.silva@votaai.org", sent_mail.to[0])
         self.assertIn("Olá, Carlos Alberto Silva!", sent_mail.body)
 
-        # Valida que o HTML contém o botão estilizado com o link para votação
+        # Valida que o HTML contém o botão estilizado com o link para votação no app mobile
         html_alternatives = [content for content, mimetype in getattr(sent_mail, 'alternatives', []) if mimetype == 'text/html']
         self.assertTrue(len(html_alternatives) > 0)
         html_content = html_alternatives[0]
         self.assertIn("Acessar Cédula de Votação", html_content)
-        self.assertIn("/votar/?token=", html_content)
+        self.assertIn("votaai://votar/?token=", html_content)
+        self.assertIn("votaai://votar/?token=", sent_mail.body)
         self.assertIn("Olá, <strong>Carlos Alberto Silva</strong>!", html_content)
         self.assertIn("Caso o botão não funcione, por favor entre em contato por e-mail.", html_content)
         self.assertIn("acessar a página de divulgação", html_content)

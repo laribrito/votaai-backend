@@ -17,6 +17,25 @@ class VotingTokenService:
         return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
 
     @classmethod
+    def build_voting_link(cls, raw_token: str) -> str:
+        """
+        Builds the mobile voting deep link in a decoupled way.
+        Supports:
+          - Formats with '{token}' placeholder: e.g. 'votaai://votar/{token}'
+          - Suffixes ending with '=' or '/': e.g. 'votaai://votar/?token='
+          - Base URLs with existing query parameters or simple schemes
+        Defaults to settings.MOBILE_VOTING_URL or 'votaai://votar/?token='.
+        """
+        mobile_url = getattr(settings, 'MOBILE_VOTING_URL', 'votaai://votar/?token=').strip()
+        if '{token}' in mobile_url:
+            return mobile_url.format(token=raw_token)
+        if mobile_url.endswith('=') or mobile_url.endswith('/'):
+            return f"{mobile_url}{raw_token}"
+        if '?' in mobile_url:
+            return f"{mobile_url}&token={raw_token}"
+        return f"{mobile_url}?token={raw_token}"
+
+    @classmethod
     def generate_and_dispatch(cls, voter, election) -> int:
         """
         Generates a single-use token for the given voter, stores its hash,
@@ -36,9 +55,8 @@ class VotingTokenService:
             election=election,
         )
 
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173').rstrip('/')
-        voting_link = f"{frontend_url}/votar/?token={raw_token}"
-        election_info_url = getattr(settings, 'ELECTION_INFO_URL', f"{frontend_url}/eleicoes").strip()
+        voting_link = cls.build_voting_link(raw_token)
+        election_info_url = getattr(settings, 'ELECTION_INFO_URL', 'http://localhost:5173/eleicoes').strip()
         app_name = getattr(settings, 'APP_NAME', 'VotaAI')
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@votaai.com')
 
@@ -67,6 +85,8 @@ class VotingTokenService:
             f"Olá, {voter_name}!\n\n"
             f"A eleição \"{election.title}\" foi iniciada e sua cédula de votação já está disponível.\n"
             f"{info_text}\n"
+            f"Para acessar sua cédula no aplicativo, utilize o link:\n"
+            f"{voting_link}\n\n"
             f"Utilize o botão disponibilizado no e-mail em formato HTML para acessar sua cédula de votação com segurança.\n"
             f"Caso o botão não funcione, por favor entre em contato por e-mail.\n\n"
             f"ATENÇÃO:\n"
@@ -114,6 +134,11 @@ class VotingTokenService:
                   </td>
                 </tr>
               </table>
+
+              <p style="font-size: 13px; color: #4b5563; line-height: 20px; margin: 16px 0 24px 0; word-break: break-all; text-align: center;">
+                Ou abra diretamente no aplicativo pelo link:<br>
+                <a href="{voting_link}" style="color: #2563eb; text-decoration: underline; font-weight: 500;">{voting_link}</a>
+              </p>
 
               <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; border-radius: 4px; margin: 24px 0;">
                 <p style="margin: 0 0 8px 0; font-weight: 700; color: #991b1b; font-size: 14px;">ATENÇÃO:</p>
