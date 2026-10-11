@@ -27,11 +27,6 @@ class AdminPreRegistrationStartSerializer(serializers.Serializer):
         error_messages={'required': _('Device ID is required.')},
         help_text='Unique, OS-agnostic identifier of the physical device/machine (e.g. dev-xxxxxxxx).'
     )
-    client_public_key = serializers.CharField(
-        required=False,
-        write_only=True,
-        help_text='Sent by desktop as duplicate of machine_public_key.'
-    )
 
 
 class AdminPreRegistrationConfirmSerializer(serializers.Serializer):
@@ -52,14 +47,16 @@ class AdminPreRegistrationConfirmSerializer(serializers.Serializer):
         error_messages={'required': _('Machine digital signature is required.')}
     )
     machine_public_key = serializers.CharField(
-        required=False,
+        required=True,
         write_only=True,
+        error_messages={'required': _('Machine public key is required.')},
         help_text='Machine RSA public key in PEM format.'
     )
-    client_public_key = serializers.CharField(
-        required=False,
-        write_only=True,
-        help_text='Sent by desktop as duplicate of machine_public_key.'
+    device_id = serializers.CharField(
+        required=True,
+        max_length=64,
+        error_messages={'required': _('Device ID is required.')},
+        help_text='Unique identifier of the physical device/machine.'
     )
 
 

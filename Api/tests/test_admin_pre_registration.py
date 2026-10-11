@@ -55,18 +55,15 @@ class AdminPreRegistrationTests(APITestCase):
         """Helper para simular o cliente Desktop cifrando a requisição com Sign-then-Encrypt."""
         key_to_sign = signer_key or self.machine_private_key
         payload_copy = dict(payload_dict)
-        omit_device = payload_copy.pop('_omit_device_id', False) or payload_copy.pop('_omit_machine_user', False)
+        omit_device = payload_copy.pop('_omit_device_id', False)
 
         # Se signature não estiver presente, injeta defaults e gera a assinatura de envelope Sign-then-Encrypt
         if 'signature' not in payload_copy:
-            if not omit_device and 'device_id' not in payload_copy and 'totp_code' not in payload_copy:
+            if not omit_device and 'device_id' not in payload_copy:
                 payload_copy['device_id'] = self.device_id
 
             if 'machine_public_key' not in payload_copy:
                 payload_copy['machine_public_key'] = self.machine_public_pem
-
-            if 'client_public_key' not in payload_copy:
-                payload_copy['client_public_key'] = payload_copy['machine_public_key']
 
             canonical_json = json.dumps(payload_copy, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
             envelope_sig = key_to_sign.sign(
@@ -97,8 +94,7 @@ class AdminPreRegistrationTests(APITestCase):
             "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
             "encrypted_aes_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
             "iv": base64.b64encode(iv).decode('utf-8'),
-            "tag": base64.b64encode(tag).decode('utf-8'),
-            "client_public_key": payload_copy.get('client_public_key') or self.machine_public_pem
+            "tag": base64.b64encode(tag).decode('utf-8')
         }
 
     def _decrypt_response_body(self, response, decrypt_key=None) -> dict:
@@ -178,6 +174,7 @@ class AdminPreRegistrationTests(APITestCase):
         req_step3 = {
             "email": admin_email,
             "totp_code": totp_code,
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
         canonical_confirm = json.dumps(req_step3, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
@@ -229,6 +226,7 @@ class AdminPreRegistrationTests(APITestCase):
         req_step3 = {
             "email": admin_email,
             "totp_code": invalid_totp,
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
         canonical_json = json.dumps(req_step3, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
@@ -266,6 +264,7 @@ class AdminPreRegistrationTests(APITestCase):
         req_step3 = {
             "email": admin_email,
             "totp_code": totp_code,
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
         canonical_json = json.dumps(req_step3, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
@@ -342,7 +341,7 @@ class AdminPreRegistrationTests(APITestCase):
             email=existing_admin_email,
             password="SenhaExistente123!",
             is_active=True,
-            machine_user=device_id
+            device_id=device_id
         )
 
         # Nova chave RSA simulando tentativa de burlar a chave TPM na mesma máquina física
@@ -384,7 +383,7 @@ class AdminPreRegistrationTests(APITestCase):
     def test_desktop_real_client_flow_success(self):
         """
         Valida o fluxo exato realizado pelo VotaAI Desktop:
-        O Desktop inclui client_public_key e machine_public_key no payload ANTES de gerar
+        O Desktop inclui machine_public_key e device_id no payload ANTES de gerar
         a assinatura canônica RSA-PSS, e depois cifra o envelope com AES-GCM + RSA do TPM.
         """
         admin_email = "real.desktop@votaai.org"
@@ -396,8 +395,7 @@ class AdminPreRegistrationTests(APITestCase):
             "email": admin_email,
             "password": password,
             "device_id": device_id,
-            "machine_public_key": self.machine_public_pem,
-            "client_public_key": self.machine_public_pem
+            "machine_public_key": self.machine_public_pem
         }
 
         # 2. Canonical JSON assinado pelo EncryptionController do Desktop
@@ -426,11 +424,9 @@ class AdminPreRegistrationTests(APITestCase):
 
         confirm_payload = {
             "email": admin_email,
-            "password": password,
             "totp_code": totp_code,
             "device_id": device_id,
-            "machine_public_key": self.machine_public_pem,
-            "client_public_key": self.machine_public_pem
+            "machine_public_key": self.machine_public_pem
         }
         canonical_confirm = json.dumps(confirm_payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
         confirm_sig = self.machine_private_key.sign(

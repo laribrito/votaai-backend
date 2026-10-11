@@ -30,7 +30,7 @@ class AdminPreRegistrationActions:
         email = data.get('email', '').strip()
         password = data.get('password')
         machine_public_key = data.get('machine_public_key')
-        machine_user = str(data.get('device_id') or '').strip()
+        device_id = str(data.get('device_id') or '').strip()
 
         if not email:
             raise ValidationError({"email": _("Email is required.")})
@@ -56,19 +56,19 @@ class AdminPreRegistrationActions:
         # Normaliza chave pública para evitar incompatibilidades de quebra de linha CRLF vs LF
         machine_public_key = machine_public_key.strip().replace('\r\n', '\n')
 
-        if not machine_user:
+        if not device_id:
             raise ValidationError({"device_id": _("Device ID is required.")})
 
-        # 1. Valida se o usuário de máquina já está vinculado a outro usuário ativo
-        existing_machine_user = User.objects.filter(
-            machine_user=machine_user,
+        # 1. Valida se o dispositivo já está vinculado a outro usuário ativo
+        existing_device_user = User.objects.filter(
+            device_id=device_id,
             is_active=True
         ).exclude(email=email).first()
-        if existing_machine_user:
+        if existing_device_user:
             raise ValidationError({
-                "device_id": _("This machine (%(machine_user)s) is already linked to another active user (%(email)s).") % {
-                    'machine_user': machine_user,
-                    'email': existing_machine_user.email,
+                "device_id": _("This machine (%(device_id)s) is already linked to another active user (%(email)s).") % {
+                    'device_id': device_id,
+                    'email': existing_device_user.email,
                 }
             })
 
@@ -92,7 +92,7 @@ class AdminPreRegistrationActions:
                 user.set_password(password)
                 user.is_active = False
                 user.machine_public_key = machine_public_key
-                user.machine_user = machine_user
+                user.device_id = device_id
                 user.totp_secret = totp_secret
                 user.save()
             else:
@@ -102,7 +102,7 @@ class AdminPreRegistrationActions:
                     password=password,
                     is_active=False,
                     machine_public_key=machine_public_key,
-                    machine_user=machine_user,
+                    device_id=device_id,
                     totp_secret=totp_secret
                 )
 
@@ -156,15 +156,20 @@ class AdminPreRegistrationActions:
             raise ValidationError({"totp_code": _("TOTP secret not configured for this user. Please restart pre-registration.")})
 
         # Revalidação de unicidade no momento da confirmação
-        if user.machine_user:
+        if user.device_id:
+            if str(data.get('device_id') or '').strip() != user.device_id:
+                raise ValidationError({
+                    "device_id": _("This device does not match the one linked during pre-registration.")
+                })
+
             conflict_user = User.objects.filter(
-                machine_user=user.machine_user,
+                device_id=user.device_id,
                 is_active=True
             ).exclude(id=user.id).first()
             if conflict_user:
                 raise ValidationError({
-                    "device_id": _("This machine (%(machine_user)s) has already been activated by another user (%(email)s).") % {
-                        'machine_user': user.machine_user,
+                    "device_id": _("This machine (%(device_id)s) has already been activated by another user (%(email)s).") % {
+                        'device_id': user.device_id,
                         'email': conflict_user.email,
                     }
                 })
