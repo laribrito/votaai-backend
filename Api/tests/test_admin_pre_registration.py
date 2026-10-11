@@ -51,32 +51,28 @@ class AdminPreRegistrationTests(APITestCase):
         self.url_start = reverse('admin-pre-registration-start')
         self.url_confirm = reverse('admin-pre-registration-confirm')
 
-    def _encrypt_request_body(self, payload_dict: dict, signer_key=None) -> dict:
+    def _sign_payload(self, payload_dict: dict) -> str:
+        """Gera a assinatura canônica RSA-PSS do payload para simular o hardware TPM."""
+        canonical_dict = {k: v for k, v in payload_dict.items() if k != 'signature'}
+        canonical_bytes = json.dumps(
+            canonical_dict,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+        sig_bytes = self.machine_private_key.sign(
+            canonical_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return base64.b64encode(sig_bytes).decode('utf-8')
+
+    def _encrypt_request_body(self, payload_dict: dict) -> dict:
         """Helper para simular o cliente Desktop cifrando a requisição com Sign-then-Encrypt."""
-        key_to_sign = signer_key or self.machine_private_key
-        payload_copy = dict(payload_dict)
-        omit_device = payload_copy.pop('_omit_device_id', False)
-
-        # Se signature não estiver presente, injeta defaults e gera a assinatura de envelope Sign-then-Encrypt
-        if 'signature' not in payload_copy:
-            if not omit_device and 'device_id' not in payload_copy:
-                payload_copy['device_id'] = self.device_id
-
-            if 'machine_public_key' not in payload_copy:
-                payload_copy['machine_public_key'] = self.machine_public_pem
-
-            canonical_json = json.dumps(payload_copy, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-            envelope_sig = key_to_sign.sign(
-                canonical_json.encode('utf-8'),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-            payload_copy['signature'] = base64.b64encode(envelope_sig).decode('utf-8')
-
-        json_bytes = json.dumps(payload_copy).encode('utf-8')
+        json_bytes = json.dumps(payload_dict).encode('utf-8')
         aes_key = os.urandom(32)
         iv = os.urandom(12)
         aesgcm = AESGCM(aes_key)
@@ -97,15 +93,14 @@ class AdminPreRegistrationTests(APITestCase):
             "tag": base64.b64encode(tag).decode('utf-8')
         }
 
-    def _decrypt_response_body(self, response, decrypt_key=None) -> dict:
+    def _decrypt_response_body(self, response) -> dict:
         """Helper para simular o cliente Desktop descriptografando a resposta do servidor com a chave privada da máquina."""
-        key_to_decrypt = decrypt_key or self.machine_private_key
         enc_json = response.json()
         self.assertIn("encrypted_payload", enc_json)
         self.assertIn("encrypted_aes_key", enc_json)
 
         enc_aes_key_bytes = base64.b64decode(enc_json["encrypted_aes_key"])
-        decrypted_aes_key = key_to_decrypt.decrypt(
+        decrypted_aes_key = self.machine_private_key.decrypt(
             enc_aes_key_bytes,
             padding.PKCS1v15()
         )
@@ -135,8 +130,10 @@ class AdminPreRegistrationTests(APITestCase):
         req_step1 = {
             "email": admin_email,
             "password": admin_pass,
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        req_step1["signature"] = self._sign_payload(req_step1)
         body_step1 = self._encrypt_request_body(req_step1)
         response_step1 = self.client.post(self.url_start, data=body_step1, format='json')
         self.assertEqual(response_step1.status_code, status.HTTP_200_OK)
@@ -177,16 +174,7 @@ class AdminPreRegistrationTests(APITestCase):
             "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
-        canonical_confirm = json.dumps(req_step3, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-        machine_signature_bytes = self.machine_private_key.sign(
-            canonical_confirm.encode('utf-8'),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        req_step3["signature"] = base64.b64encode(machine_signature_bytes).decode('utf-8')
+        req_step3["signature"] = self._sign_payload(req_step3)
 
         body_step3 = self._encrypt_request_body(req_step3)
         response_step3 = self.client.post(self.url_confirm, data=body_step3, format='json')
@@ -216,8 +204,10 @@ class AdminPreRegistrationTests(APITestCase):
         req_step1 = {
             "email": admin_email,
             "password": "SenhaValida123!",
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        req_step1["signature"] = self._sign_payload(req_step1)
         self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
 
         user = User.objects.get(email=admin_email)
@@ -229,16 +219,7 @@ class AdminPreRegistrationTests(APITestCase):
             "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
-        canonical_json = json.dumps(req_step3, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-        sig_bytes = self.machine_private_key.sign(
-            canonical_json.encode('utf-8'),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        req_step3["signature"] = base64.b64encode(sig_bytes).decode('utf-8')
+        req_step3["signature"] = self._sign_payload(req_step3)
 
         response = self.client.post(self.url_confirm, data=self._encrypt_request_body(req_step3), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -252,8 +233,10 @@ class AdminPreRegistrationTests(APITestCase):
         req_step1 = {
             "email": admin_email,
             "password": "SenhaValida123!",
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        req_step1["signature"] = self._sign_payload(req_step1)
         self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
 
         user = User.objects.get(email=admin_email)
@@ -297,8 +280,10 @@ class AdminPreRegistrationTests(APITestCase):
         req = {
             "email": active_email,
             "password": "NovaSenha123!",
+            "device_id": self.device_id,
             "machine_public_key": self.machine_public_pem
         }
+        req["signature"] = self._sign_payload(req)
         response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -319,8 +304,10 @@ class AdminPreRegistrationTests(APITestCase):
             req = {
                 "email": f"teste.{abs(hash(weak_pass))}@votaai.org",
                 "password": weak_pass,
+                "device_id": self.device_id,
                 "machine_public_key": self.machine_public_pem
             }
+            req["signature"] = self._sign_payload(req)
             response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
             self.assertEqual(
                 response.status_code,
@@ -333,7 +320,6 @@ class AdminPreRegistrationTests(APITestCase):
     def test_pre_registration_with_same_machine_user_fails(self):
         """Valida que tentar pré-cadastrar outro admin para a mesma máquina física (device_id) retorna erro 400."""
         existing_admin_email = "existing.machine.admin@votaai.org"
-        device_id = "dev-unique-machine-99"
         
         # Cria admin ativo vinculado a esse device_id
         User.objects.create_user(
@@ -341,30 +327,24 @@ class AdminPreRegistrationTests(APITestCase):
             email=existing_admin_email,
             password="SenhaExistente123!",
             is_active=True,
-            device_id=device_id
+            device_id=self.device_id
         )
-
-        # Nova chave RSA simulando tentativa de burlar a chave TPM na mesma máquina física
-        other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        other_pub_pem = other_key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        ).decode('utf-8')
 
         req = {
             "email": "intruder.admin@votaai.org",
             "password": "OutraSenhaForte!123",
-            "machine_public_key": other_pub_pem,
-            "device_id": device_id
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
         }
+        req["signature"] = self._sign_payload(req)
         response = self.client.post(
             self.url_start,
-            data=self._encrypt_request_body(req, signer_key=other_key),
+            data=self._encrypt_request_body(req),
             format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        resp_data = self._decrypt_response_body(response, decrypt_key=other_key)
+        resp_data = self._decrypt_response_body(response)
         self.assertIn("device_id", resp_data)
 
     def test_pre_registration_without_machine_user_fails(self):
@@ -372,9 +352,9 @@ class AdminPreRegistrationTests(APITestCase):
         req = {
             "email": "no.machine@votaai.org",
             "password": "SenhaValida123!",
-            "machine_public_key": self.machine_public_pem,
-            "_omit_device_id": True
+            "machine_public_key": self.machine_public_pem
         }
+        req["signature"] = self._sign_payload(req)
         response = self.client.post(self.url_start, data=self._encrypt_request_body(req), format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_data = self._decrypt_response_body(response)
