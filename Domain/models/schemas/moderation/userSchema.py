@@ -43,8 +43,8 @@ class User(UserProxy, AbstractUser, TimestampSchemaMixin):
         null=True,
         help_text=_('Machine RSA public key linked to the user for hardware validation and cryptography')
     )
-    machine_user = models.CharField(
-        _('machine user'),
+    device_id = models.CharField(
+        _('device id'),
         max_length=64,
         blank=True,
         null=True,
