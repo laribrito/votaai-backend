@@ -29,21 +29,16 @@ class SEDecryptMiddleware(MiddlewareMixin):
     # Prefixos de rotas para Desktop usando a chave 1
     DESKTOP_ROUTES = (
         '/api/admin',              # pré-cadastro do admin
+        '/api/auth',               # autenticação desktop
+        '/api/ping-desktop',       # Rota de teste
         '/api/election/create',    # cadastrar eleição
+        '/api/election/available', # listagem de eleições disponiveis
         '/api/election/start',     # iniciar eleição
         '/api/election/list',      # listar eleições
         '/api/election/close',     # Fechar eleição
         '/api/election/tally',     # apurar eleição
-        '/api/ping-desktop',       # Rota de teste
-        '/api/auth',               # autenticação desktop
-        '/api/users',              # gerenciamento de usuários
-        '/api/roles',              # listagem de roles
-        '/api/groups',             # grupos
-        '/api/permissions',        # permissões
-        '/api/password',           # reset/gestão de senha
-        '/api/election/available', # listagem de eleições disponiveis
-        '/api/election/start',     # iniciar eleição
     )
+
 
     # Prefixos de rotas para Mobile usando a chave 2
     MOBILE_ROUTES = (
