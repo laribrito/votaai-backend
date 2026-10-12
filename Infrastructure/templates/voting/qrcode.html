@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="referrer" content="no-referrer">
+  <title>{{ app_name|default:"Vota ai" }} - Cédula de Votação</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Sistema Central de Design Tokens do Vota Aí (Desktop & Mobile) */
+    :root {
+      --primary: #1E6091;
+      --primary-dark: #14466B;
+      --primary-light: #E0F2FE;
+
+      --action-teal: #007A78;
+      --action-green: #1B7A38;
+      --action-burgundy: #7A1B28;
+      --action-purple: #5E1B7A;
+
+      --secondary: #555555;
+      --secondary-dark: #333333;
+      --secondary-light: #EAEAEA;
+
+      --background: #E6E6E6;
+      --surface: #FFFFFF;
+      --surface-subtle: #F0F0F0;
+
+      --text-primary: #111111;
+      --text-secondary: #555555;
+      --text-muted: #888888;
+      --border: #D0D0D0;
+      --border-light: #E0E0E0;
+
+      --warning: #D97706;
+      --warning-light: #FEF3C7;
+      --warning-text: #92400E;
+
+      --danger: #7A1B28;
+      --danger-light: #FEE2E2;
+
+      --success: #1B7A38;
+      --success-light: #DCFCE7;
+
+      --token-bg: #0F172A;
+      --token-text: #38BDF8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      background-color: var(--background);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      padding: 32px 28px;
+      text-align: center;
+      position: relative;
+    }
+
+    /* Cabeçalho estilo App Desktop / Mobile (sem topbar escura) */
+    .brand-header {
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .brand-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+
+    .brand-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    /* Barra do Temporizador de 3 Minutos Integrada ao Card */
+    .timer-card {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border-light);
+      border-radius: 10px;
+      margin-bottom: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .timer-content {
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .timer-info {
+      text-align: left;
+    }
+
+    .timer-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .timer-display {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--primary);
+      transition: color 0.3s ease;
+    }
+
+    .timer-bar-container {
+      width: 100%;
+      height: 5px;
+      background: var(--border-light);
+      overflow: hidden;
+    }
+
+    .timer-bar {
+      height: 100%;
+      width: 100%;
+      background: var(--primary);
+      transition: width 1s linear, background-color 0.3s ease;
+    }
+
+    /* Moldura do QR Code */
+    .qrcode-outer {
+      background: #FFFFFF;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: inline-block;
+      margin: 0 auto 16px auto;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      min-width: 232px;
+      min-height: 232px;
+    }
+
+    #qrcode-target {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 200px;
+      height: 200px;
+      margin: 0 auto;
+    }
+
+    #qrcode-target img,
+    #qrcode-target canvas {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* Aviso de Segurança (securityNotice do Mobile) */
+    .security-notice {
+      background: var(--warning-light);
+      border: 1px solid var(--warning);
+      border-left: 4px solid var(--warning);
+      border-radius: 8px;
+      padding: 14px 16px;
+      text-align: left;
+      margin-bottom: 20px;
+    }
+
+    .security-notice-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .security-notice-icon {
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .security-notice-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--warning-text);
+      letter-spacing: -0.2px;
+    }
+
+    .security-notice-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--warning-text);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .security-notice-list li {
+      margin-bottom: 6px;
+    }
+
+    .security-notice-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    .security-notice-text {
+      font-size: 12px;
+      color: var(--warning-text);
+      line-height: 1.5;
+    }
+
+    /* Grupo de Botões (estilo Button do Mobile) */
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+      width: 100%;
+    }
+
+    /* Botão Primário (Azul do Vota Aí) */
+    .btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+    }
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    /* Botão Secundário / Outline */
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+    .btn-outline:hover {
+      background: var(--primary-light);
+    }
+
+    /* Botão Ocultar / Danger Outline */
+    .btn-danger-outline {
+      background: transparent;
+      color: var(--danger);
+      border-color: var(--danger);
+      font-size: 13px;
+      padding: 11px 16px;
+    }
+    .btn-danger-outline:hover {
+      background: var(--danger-light);
+    }
+
+    /* Estados de Feedback (Expirado / Sem Token) */
+    .state-wrapper {
+      display: none;
+    }
+
+    .state-card {
+      padding: 24px 20px;
+      border-radius: 10px;
+      text-align: center;
+      display: none;
+    }
+
+    .state-wrapper .state-card {
+      display: block;
+    }
+
+    .state-expired {
+      background: var(--danger-light);
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
+
+    .state-error {
+      background: var(--warning-light);
+      border: 1px solid var(--warning);
+      color: var(--warning-text);
+    }
+
+    .state-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .state-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .state-desc {
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 0;
+    }
+
+    /* Toast Flutuante */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--secondary-dark);
+      color: #FFFFFF;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="main-card">
+    <!-- Cabeçalho idêntico ao PageHeader do Desktop/Mobile -->
+    <div class="brand-header">
+      <h1 class="brand-title">{{ app_name|default:"Vota ai" }}</h1>
+      <p class="brand-subtitle">Escanear Cédula de Votação • Sistema Eleitoral Seguro</p>
+    </div>
+
+    <!-- Estado de Erro: Nenhum Token -->
+    <div id="state-no-token" class="state-card state-error">
+      <div class="state-icon">⚠️</div>
+      <div class="state-title">Token de Votação Não Fornecido</div>
+      <p class="state-desc">Nenhum identificador de acesso foi localizado na URL. Por favor, acesse o link enviado diretamente ao seu e-mail institucional.</p>
+    </div>
+
+    <!-- Estado: Token Já Utilizado (Renderizado via Django Template ou ativado via JS) -->
+    <div id="state-already-used" class="state-card state-expired" {% if server_token_status == 'already_used' %}style="display: block;"{% endif %}>
+      <div class="state-icon">🔒</div>
+      <div class="state-title">Cédula Já Utilizada</div>
+      <p class="state-desc">
+        O voto vinculado a este acesso já foi confirmado no sistema eleitoral.<br>
+        Por motivos de segurança e sigilo, esta cédula de uso único não pode ser reutilizada.
+      </p>
+    </div>
+
+    <!-- Estado de Erro: Token Não Localizado (Renderizado via Django Template ou ativado via JS) -->
+    <div id="state-invalid" class="state-card state-error" {% if server_token_status == 'not_found' %}style="display: block;"{% endif %}>
+      <div class="state-icon">⚠️</div>
+      <div class="state-title">Cédula Não Localizada</div>
+      <p class="state-desc">
+        O identificador de acesso informado é inválido ou não foi localizado no sistema eleitoral.
+      </p>
+    </div>
+
+    <!-- Sessão Ativa: QR Code e Timer -->
+    <div id="active-session-wrapper" {% if server_token_status == 'already_used' or server_token_status == 'not_found' %}style="display: none;"{% endif %}>
+      <!-- Card de Expiração em Tela com Barra de Contagem Grudada -->
+      <div class="timer-card">
+        <div class="timer-content">
+          <div class="timer-info">
+            <div class="timer-label">Expiração em Tela</div>
+            <div class="timer-display" id="timer-text">03:00</div>
+          </div>
+          <div style="font-size: 20px;">⏱️</div>
+        </div>
+        <div class="timer-bar-container">
+          <div class="timer-bar" id="timer-bar"></div>
+        </div>
+      </div>
+
+      <div class="qrcode-outer" id="qrcode-box">
+        <div id="qrcode-target"></div>
+      </div>
+
+      <!-- Aviso de Atenção e Segurança -->
+      <div class="security-notice">
+        <div class="security-notice-header">
+          <span class="security-notice-icon">⚠️</span>
+          <span class="security-notice-title">Atenção e Orientações de Segurança</span>
+        </div>
+        <ul class="security-notice-list">
+          <li><strong>Como votar:</strong> Abra o aplicativo <strong>{{ app_name|default:"Vota ai" }}</strong> no aparelho seguro e aponte a câmera para o QR Code. Se estiver no próprio celular, toque no botão abaixo.</li>
+          <li><strong>Cédula de uso único:</strong> Este acesso é <strong>pessoal, intransferível e confidencial</strong>. Ele expira imediatamente após a confirmação do seu voto.</li>
+          <li><strong>Proteção e sigilo:</strong> O QR Code desaparece da tela em <strong>3 minutos</strong> para evitar que terceiros vejam seu acesso. Nunca fotografe ou compartilhe esta tela.</li>
+        </ul>
+      </div>
+
+      <!-- Ações -->
+      <div class="actions">
+        <a id="btn-open-app" href="#" class="btn btn-primary">
+          📱 Abrir no Aplicativo neste Dispositivo
+        </a>
+      </div>
+    </div>
+
+    <!-- Estado Expirado (após 3 minutos) -->
+    <div id="state-expired" class="state-wrapper">
+      <div class="state-card state-expired">
+        <div class="state-icon">🔒</div>
+        <div class="state-title">Tempo de Exibição Esgotado</div>
+        <p class="state-desc">
+          Por motivos de segurança e sigilo, o QR Code de votação foi destruído da tela após 3 minutos. Se você ainda não votou, recarregue a página para reexibir.
+        </p>
+      </div>
+
+      <div class="actions" style="margin-top: 16px;">
+        <button id="btn-reload" type="button" class="btn btn-primary">
+          Exibir Novamente
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer-note">
+    Este acesso é de uso único.<br>
+    Após o depósito do voto no aplicativo, o token é invalidado permanentemente.
+  </p>
+
+  <div id="toast" class="toast">Link copiado para a área de transferência!</div>
+
+  <!-- QR Code Generator Library: Primary CDN com Fallback -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    if (typeof QRCode === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>');
+    }
+  </script>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var TOTAL_SECONDS = 180; // 3 minutos
+      var mobilePrefix = "{{ mobile_url_prefix|default:'votaai://votar/?token=' }}";
+      var token = null;
+      var timerInterval = null;
+      var endTime = null;
+
+      var serverTokenStatus = "{{ server_token_status|default:'' }}";
+      var serverToken = "{{ server_token|default:'' }}";
+
+      // Elementos do DOM
+      var activeWrapper = document.getElementById('active-session-wrapper');
+      var stateNoToken = document.getElementById('state-no-token');
+      var stateAlreadyUsed = document.getElementById('state-already-used');
+      var stateInvalid = document.getElementById('state-invalid');
+      var stateExpired = document.getElementById('state-expired');
+      var timerText = document.getElementById('timer-text');
+      var timerBar = document.getElementById('timer-bar');
+      var qrcodeTarget = document.getElementById('qrcode-target');
+      var btnOpenApp = document.getElementById('btn-open-app');
+      var btnReload = document.getElementById('btn-reload');
+      var toast = document.getElementById('toast');
+
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(function () {
+          toast.classList.remove('show');
+        }, 2500);
+      }
+
+      function extractToken() {
+        if (window.location.hash) {
+          var hashContent = window.location.hash.substring(1);
+          var hashParams = new URLSearchParams(hashContent);
+          var hToken = hashParams.get('token');
+          if (hToken) return hToken.trim();
+          if (!hashContent.includes('=')) return hashContent.trim();
+        }
+
+        if (window.location.search) {
+          var searchParams = new URLSearchParams(window.location.search);
+          var qToken = searchParams.get('token');
+          if (qToken) {
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname + '#token=' + qToken);
+            }
+            return qToken.trim();
+          }
+        }
+        return null;
+      }
+
+      function buildDeepLink(rawToken) {
+        if (mobilePrefix.indexOf('{token}') !== -1) {
+          return mobilePrefix.replace('{token}', rawToken);
+        }
+        if (mobilePrefix.endsWith('=') || mobilePrefix.endsWith('/')) {
+          return mobilePrefix + rawToken;
+        }
+        if (mobilePrefix.indexOf('?') !== -1) {
+          return mobilePrefix + '&token=' + rawToken;
+        }
+        return mobilePrefix + '?token=' + rawToken;
+      }
+
+      function formatTime(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function renderQRCode(deepLink) {
+        qrcodeTarget.innerHTML = '';
+        if (typeof QRCode !== 'undefined') {
+          new QRCode(qrcodeTarget, {
+            text: deepLink,
+            width: 200,
+            height: 200,
+            colorDark: "#111111",
+            colorLight: "#FFFFFF",
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        } else {
+          qrcodeTarget.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:20px;text-align:center;">Biblioteca de QR Code indisponível offline.</div>';
+        }
+      }
+
+      function expireSession() {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+        token = null;
+        if (qrcodeTarget) qrcodeTarget.innerHTML = '';
+        activeWrapper.style.display = 'none';
+        stateExpired.style.display = 'block';
+      }
+
+      function updateTimer() {
+        var now = Date.now();
+        var remainingSeconds = Math.max(0, Math.ceil((endTime - now) / 1000));
+
+        timerText.textContent = formatTime(remainingSeconds);
+
+        var percent = (remainingSeconds / TOTAL_SECONDS) * 100;
+        timerBar.style.width = percent + '%';
+
+        if (remainingSeconds <= 30) {
+          timerText.style.color = 'var(--danger)';
+          timerBar.style.backgroundColor = 'var(--danger)';
+        } else if (remainingSeconds <= 60) {
+          timerText.style.color = 'var(--warning)';
+          timerBar.style.backgroundColor = 'var(--warning)';
+        } else {
+          timerText.style.color = 'var(--primary)';
+          timerBar.style.backgroundColor = 'var(--primary)';
+        }
+
+        if (remainingSeconds <= 0) {
+          expireSession();
+        }
+      }
+
+      function startTimer() {
+        endTime = Date.now() + (TOTAL_SECONDS * 1000);
+        updateTimer();
+        timerInterval = setInterval(updateTimer, 1000);
+      }
+
+      async function computeHash(str) {
+        if (window.crypto && window.crypto.subtle) {
+          try {
+            var msgUint8 = new TextEncoder().encode(str);
+            var hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+            var hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+          } catch (e) {
+            return null;
+          }
+        }
+        return null;
+      }
+
+      function checkTokenStatus(rawToken, callback) {
+        computeHash(rawToken).then(function (hash) {
+          var url = '/votar/?check=1';
+          if (hash) {
+            url += '&token_hash=' + encodeURIComponent(hash);
+          } else {
+            url += '&token=' + encodeURIComponent(rawToken);
+          }
+
+          fetch(url, {
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+          })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            callback(data.status || 'valid');
+          })
+          .catch(function () {
+            callback('valid');
+          });
+        });
+      }
+
+      function init() {
+        if (btnReload) {
+          btnReload.addEventListener('click', function () {
+            window.location.reload();
+          });
+        }
+
+        // Se o servidor Django já avaliou via template que o token é inválido ou já foi usado
+        if (serverTokenStatus === 'already_used' || serverTokenStatus === 'not_found') {
+          if (activeWrapper) activeWrapper.style.display = 'none';
+          return;
+        }
+
+        token = serverToken || extractToken();
+
+        if (!token) {
+          if (activeWrapper) activeWrapper.style.display = 'none';
+          if (stateNoToken) stateNoToken.style.display = 'block';
+          return;
+        }
+
+        // Se o servidor Django já validou este token como válido
+        if (serverTokenStatus === 'valid') {
+          var deepLink = buildDeepLink(token);
+          btnOpenApp.href = deepLink;
+          renderQRCode(deepLink);
+          startTimer();
+          return;
+        }
+
+        // Caso tenha vindo pelo fragmento da URL (#token=...), verifica assincronamente com o backend
+        checkTokenStatus(token, function (status) {
+          if (status === 'already_used') {
+            if (activeWrapper) activeWrapper.style.display = 'none';
+            if (stateAlreadyUsed) stateAlreadyUsed.style.display = 'block';
+            return;
+          }
+          if (status === 'not_found') {
+            if (activeWrapper) activeWrapper.style.display = 'none';
+            if (stateInvalid) stateInvalid.style.display = 'block';
+            return;
+          }
+
+          var deepLink = buildDeepLink(token);
+          btnOpenApp.href = deepLink;
+          renderQRCode(deepLink);
+          startTimer();
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+    })();
+  </script>
+</body>
+</html>

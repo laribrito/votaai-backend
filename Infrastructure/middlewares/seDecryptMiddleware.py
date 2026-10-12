@@ -24,6 +24,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/redoc',
         '/static',
         '/media',
+        '/votar',
     )
 
     # Prefixos de rotas para Desktop usando a chave 1

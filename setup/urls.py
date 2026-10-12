@@ -5,7 +5,14 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.static import serve
 
+from Api.views.election.votingQRCodeView import VotingQRCodeView
+
 urlpatterns = [
+    # ==========================================================================
+    # Cédula de Votação Web / QR Code (Lê token via hash #token=...)
+    # ==========================================================================
+    path('votar/', VotingQRCodeView.as_view(), name='voting-qrcode'),
+
     # ==========================================================================
     # Django Admin
     # ==========================================================================
