@@ -36,10 +36,26 @@ class VotingTokenService:
         return f"{mobile_url}?token={raw_token}"
 
     @classmethod
+    def build_web_voting_link(cls, raw_token: str) -> str:
+        """
+        Builds the secure web voting link pointing to the ephemeral QR code page.
+        Uses URL hash fragment (#token=) so the token is never sent in HTTP request lines.
+        Defaults to settings.WEB_VOTING_URL or 'http://localhost:8000/votar/#token='.
+        """
+        web_url = getattr(settings, 'WEB_VOTING_URL', 'http://localhost:8000/votar/#token=').strip()
+        if '{token}' in web_url:
+            return web_url.format(token=raw_token)
+        if web_url.endswith('=') or web_url.endswith('#') or web_url.endswith('/'):
+            return f"{web_url}{raw_token}"
+        if '#' in web_url:
+            return f"{web_url}&token={raw_token}"
+        return f"{web_url}#token={raw_token}"
+
+    @classmethod
     def generate_and_dispatch(cls, voter, election) -> int:
         """
         Generates a single-use token for the given voter, stores its hash,
-        and sends the voting link via email.
+        and sends the voting links (app direct + web QR Code) via email.
 
         Returns 1 on success, 0 on failure (so callers can sum email counts).
         """
@@ -55,7 +71,8 @@ class VotingTokenService:
             election=election,
         )
 
-        voting_link = cls.build_voting_link(raw_token)
+        mobile_voting_link = cls.build_voting_link(raw_token)
+        web_voting_link = cls.build_web_voting_link(raw_token)
         election_info_url = getattr(settings, 'ELECTION_INFO_URL', 'http://localhost:5173/eleicoes').strip()
         app_name = getattr(settings, 'APP_NAME', 'VotaAI')
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@votaai.com')
@@ -85,13 +102,15 @@ class VotingTokenService:
             f"Olá, {voter_name}!\n\n"
             f"A eleição \"{election.title}\" foi iniciada e sua cédula de votação já está disponível.\n"
             f"{info_text}\n"
-            f"Para acessar sua cédula no aplicativo, utilize o link:\n"
-            f"{voting_link}\n\n"
-            f"Utilize o botão disponibilizado no e-mail em formato HTML para acessar sua cédula de votação com segurança.\n"
-            f"Caso o botão não funcione, por favor entre em contato por e-mail.\n\n"
+            f"OPÇÕES DE ACESSO À CÉDULA:\n\n"
+            f"1) Para votar diretamente neste smartphone (com o app instalado):\n"
+            f"{mobile_voting_link}\n\n"
+            f"2) Para votar usando outro aparelho seguro (exibir QR Code com timer de 3 minutos):\n"
+            f"{web_voting_link}\n\n"
             f"ATENÇÃO:\n"
             f"- Este acesso é pessoal, intransferível e de uso único.\n"
-            f"- Após clicar e votar, o link expira imediatamente.\n"
+            f"- Por segurança em hardware, a votação exige aparelho compatível (Keystore/TPM/Secure Enclave) e sua senha de eleitor.\n"
+            f"- A página do QR Code é protegida e expira após 3 minutos de exibição.\n"
             f"- Não compartilhe seu acesso com ninguém.\n\n"
             f"Atenciosamente,\n{app_name}"
         )
@@ -110,52 +129,76 @@ class VotingTokenService:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Acesso à Cédula de Votação</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6; padding: 40px 16px;">
+<body style="margin: 0; padding: 0; background-color: #E6E6E6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111111;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #E6E6E6; padding: 40px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #FFFFFF; border: 1px solid #D0D0D0; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);">
+          <!-- Cabeçalho idêntico ao PageHeader do Desktop/Mobile (sem topbar escura) -->
           <tr>
-            <td style="background-color: #1e3a8a; padding: 24px 32px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700; letter-spacing: 0.5px;">{app_name}</h1>
+            <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #E0E0E0;">
+              <h1 style="margin: 0; color: #111111; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">{app_name}</h1>
+              <p style="margin: 6px 0 0 0; color: #555555; font-size: 13px; font-weight: 500;">Sistema Eleitoral • Autenticação Segura</p>
             </td>
           </tr>
           <tr>
             <td style="padding: 32px;">
-              <p style="font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">Olá, <strong>{voter_name}</strong>!</p>
-              <p style="font-size: 16px; line-height: 24px; margin: 0 0 20px 0;">A eleição <strong>"{election.title}"</strong> foi iniciada e sua cédula de votação já está disponível.</p>
+              <p style="font-size: 16px; line-height: 24px; margin: 0 0 16px 0; color: #111111;">Olá, <strong>{voter_name}</strong>!</p>
+              <p style="font-size: 15px; line-height: 24px; margin: 0 0 20px 0; color: #555555;">A eleição <strong>"{election.title}"</strong> foi iniciada e sua cédula de votação já está disponível.</p>
               {info_html}
-              <table border="0" cellspacing="0" cellpadding="0" style="margin: 32px auto; text-align: center;">
+
+              <!-- BOTÃO 1: Redirecionamento Direto para o App Mobile (Primary Blue) -->
+              <table border="0" cellspacing="0" cellpadding="0" style="width: 100%; margin: 24px 0 12px 0;">
                 <tr>
-                  <td align="center" style="border-radius: 6px; background-color: #2563eb;">
-                    <a href="{voting_link}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 14px 32px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px; background-color: #2563eb; border: 1px solid #1d4ed8;">
-                      Acessar Cédula de Votação
+                  <td align="center" style="border-radius: 10px; background-color: #1E6091;">
+                    <a href="{mobile_voting_link}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 14px 24px; font-size: 15px; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 10px; background-color: #1E6091; border: 1px solid #14466B; text-align: center;">
+                      📱 Acessar Cédula de Votação (Abrir no Aplicativo)
                     </a>
                   </td>
                 </tr>
               </table>
 
-              <p style="font-size: 13px; color: #4b5563; line-height: 20px; margin: 16px 0 24px 0; word-break: break-all; text-align: center;">
-                Ou abra diretamente no aplicativo pelo link:<br>
-                <a href="{voting_link}" style="color: #2563eb; text-decoration: underline; font-weight: 500;">{voting_link}</a>
+              <!-- DIVISOR COM EXPLICAÇÃO -->
+              <div style="text-align: center; margin: 18px 0 14px 0; position: relative;">
+                <span style="background-color: #EAEAEA; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.5px;">
+                  ou para votar em outro aparelho
+                </span>
+              </div>
+
+              <!-- BOTÃO 2: Página com QR Code (Outline Blue) -->
+              <table border="0" cellspacing="0" cellpadding="0" style="width: 100%; margin: 12px 0 24px 0;">
+                <tr>
+                  <td align="center" style="border-radius: 10px; background-color: #FFFFFF;">
+                    <a href="{web_voting_link}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 14px 24px; font-size: 15px; font-weight: 600; color: #1E6091; text-decoration: none; border-radius: 10px; background-color: #FFFFFF; border: 1.5px solid #1E6091; text-align: center;">
+                      🖥️ Exibir QR Code na Web (Temporizador de 3 min)
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size: 13px; color: #555555; line-height: 20px; margin: 16px 0; text-align: center;">
+                Use o botão <strong>Exibir QR Code</strong> caso esteja lendo no computador ou se o aparelho atual não possuir biometria/segurança em hardware.
               </p>
 
-              <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; border-radius: 4px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; font-weight: 700; color: #991b1b; font-size: 14px;">ATENÇÃO:</p>
-                <ul style="margin: 0; padding-left: 20px; color: #7f1d1d; font-size: 13px; line-height: 20px;">
-                  <li>Este link é <strong>pessoal, intransferível e de uso único</strong>.</li>
-                  <li>Não compartilhe este link com ninguém.</li>
+              <!-- AVISO DE SEGURANÇA (Estilo securityNotice do Mobile) -->
+              <div style="background-color: #FEF3C7; border: 1px solid #D97706; border-left: 4px solid #D97706; padding: 14px 16px; border-radius: 8px; margin: 24px 0;">
+                <p style="margin: 0 0 6px 0; font-weight: 700; color: #92400E; font-size: 13px;">⚠️ ATENÇÃO E SEGURANÇA:</p>
+                <ul style="margin: 0; padding-left: 20px; color: #92400E; font-size: 12px; line-height: 19px;">
+                  <li>Este acesso é <strong>pessoal, intransferível e de uso único</strong>.</li>
+                  <li>Após o depósito do voto no aplicativo, o link expira imediatamente.</li>
+                  <li>A exibição do QR Code na web é protegida por temporizador de 3 minutos.</li>
+                  <li>Não compartilhe seu e-mail ou código de acesso com terceiros.</li>
                 </ul>
               </div>
 
-              <p style="font-size: 13px; color: #6b7280; line-height: 20px; margin: 24px 0 0 0;">
+              <p style="font-size: 12px; color: #888888; line-height: 18px; margin: 24px 0 0 0; text-align: center;">
                 Caso o botão não funcione, por favor entre em contato por e-mail.
               </p>
             </td>
           </tr>
           <tr>
-            <td style="background-color: #f9fafb; padding: 20px 32px; border-top: 1px solid #e5e7eb; text-align: center;">
-              <p style="font-size: 12px; color: #9ca3af; margin: 0;">Atenciosamente,<br><strong>{app_name}</strong></p>
+            <td style="background-color: #F0F0F0; padding: 20px 32px; border-top: 1px solid #E0E0E0; text-align: center;">
+              <p style="font-size: 12px; color: #888888; margin: 0;">Atenciosamente,<br><strong>{app_name}</strong></p>
             </td>
           </tr>
         </table>

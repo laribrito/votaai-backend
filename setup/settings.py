@@ -193,3 +193,7 @@ ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/e
 # Link / Deep Link de votação para aplicativo mobile (desacoplado; padrão: votaai://votar/?token=)
 # Suporta prefixo com query param (ex: votaai://votar/?token=), path com barra ou template {token}
 MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')
+
+# Link / URL web para exibição segura do QR Code (fragmento de hash seguro com #token=)
+WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/#token=')
+
