@@ -16,6 +16,12 @@ from Api.views.election.availableElectionsView import AvailableElectionsView
 from Api.views.election.startElectionView import StartElectionView
 
 # ---------------------------------------------------------------------------
+# Mobile Endpoints (Votação)
+# ---------------------------------------------------------------------------
+from Api.views.vote.voteRequestView import VoteRequestView
+from Api.views.vote.voteCastView import VoteCastView
+
+# ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
 # ---------------------------------------------------------------------------
 router = DefaultRouter()
@@ -35,6 +41,10 @@ urlpatterns = [
     path('election/create/', ElectionCreateView.as_view(), name='election-create'),
     path('election/available/', AvailableElectionsView.as_view(), name='election-available'),
     path('election/start/', StartElectionView.as_view(), name='election-start'),
+
+    # --- Votação (Mobile) ---
+    path('vote/request/', VoteRequestView.as_view(), name='vote-request'),
+    path('vote/cast/', VoteCastView.as_view(), name='vote-cast'),
 
     # --- ViewSets ---
     path('', include(router.urls)),

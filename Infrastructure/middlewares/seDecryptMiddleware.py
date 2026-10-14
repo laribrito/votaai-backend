@@ -43,8 +43,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
 
     # Prefixos de rotas para Mobile usando a chave 2
     MOBILE_ROUTES = (
-        '/api/vote',               # solicitação de voto e votar
-        '/api/election/track',     # acompanhar eleição
+        '/api/vote/request',       # 1. Solicitação de cédula (recebe public key, retorna cédula da eleição)
+        '/api/vote/cast',          # 2. Envio da cédula preenchida (deposita o voto cifrado e emite comprovante)
+        '/api/election/track',     # Acompanhar eleição
     )
 
     def process_request(self, request):
@@ -207,6 +208,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 client_pub_key = None
 
             if not client_pub_key:
+                if response.status_code >= 400:
+                    return response
                 return JsonResponse({
                     'error': f'Chave pública da máquina ({device_type}) não encontrada. Envie sua chave pública no campo "machine_public_key".'
                 }, status=400)
