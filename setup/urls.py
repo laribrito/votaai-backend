@@ -9,9 +9,10 @@ from Api.views.election.votingQRCodeView import VotingQRCodeView
 
 urlpatterns = [
     # ==========================================================================
-    # Cédula de Votação Web / QR Code (Lê token via hash #token=...)
+    # Cédula de Votação Web / QR Code (Validação na View via ?token= ou /votar/<token>/)
     # ==========================================================================
     path('votar/', VotingQRCodeView.as_view(), name='voting-qrcode'),
+    path('votar/<str:token>/', VotingQRCodeView.as_view(), name='voting-qrcode-token'),
 
     # ==========================================================================
     # Django Admin

@@ -38,18 +38,20 @@ class VotingTokenService:
     @classmethod
     def build_web_voting_link(cls, raw_token: str) -> str:
         """
-        Builds the secure web voting link pointing to the ephemeral QR code page.
-        Uses URL hash fragment (#token=) so the token is never sent in HTTP request lines.
-        Defaults to settings.WEB_VOTING_URL or 'http://localhost:8000/votar/#token='.
+        Builds the web voting link pointing to the ephemeral QR code page.
+        Supports server-side validation via query parameter (?token=).
+        Defaults to settings.WEB_VOTING_URL or 'http://localhost:8000/votar/?token='.
         """
-        web_url = getattr(settings, 'WEB_VOTING_URL', 'http://localhost:8000/votar/#token=').strip()
+        web_url = getattr(settings, 'WEB_VOTING_URL', 'http://localhost:8000/votar/?token=').strip()
         if '{token}' in web_url:
             return web_url.format(token=raw_token)
         if web_url.endswith('=') or web_url.endswith('#') or web_url.endswith('/'):
             return f"{web_url}{raw_token}"
+        if '?' in web_url:
+            return f"{web_url}&token={raw_token}"
         if '#' in web_url:
             return f"{web_url}&token={raw_token}"
-        return f"{web_url}#token={raw_token}"
+        return f"{web_url}?token={raw_token}"
 
     @classmethod
     def generate_and_dispatch(cls, voter, election) -> int:

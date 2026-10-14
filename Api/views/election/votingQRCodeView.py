@@ -20,11 +20,11 @@ class VotingQRCodeView(View):
     - Anti-cache headers enforce that browsers, proxies, and intermediaries never cache the page.
     """
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request, token=None, *args, **kwargs):
         # 1. Verificação assíncrona/JSON (quando a página chama via fetch ?check=1)
         if request.GET.get('check') == '1' or request.GET.get('token_hash'):
             token_hash = request.GET.get('token_hash', '').strip()
-            raw_token = request.GET.get('token', '').strip()
+            raw_token = (token or request.GET.get('token', '')).strip()
 
             if not token_hash and raw_token:
                 token_hash = VotingTokenService._hash_token(raw_token)
@@ -37,13 +37,15 @@ class VotingQRCodeView(View):
                 return JsonResponse({'status': 'not_found', 'is_used': False})
             if token_obj.is_used:
                 return JsonResponse({'status': 'already_used', 'is_used': True})
+            if getattr(token_obj, 'is_blocked', False):
+                return JsonResponse({'status': 'blocked', 'is_used': False})
             return JsonResponse({'status': 'valid', 'is_used': False})
 
-        # 2. Renderização do Template Django
+        # 2. Renderização do Template Django (Validação no Servidor)
         app_name = getattr(settings, 'APP_NAME', 'Vota-ai')
         mobile_url = getattr(settings, 'MOBILE_VOTING_URL', 'votaai://votar/?token=')
 
-        raw_token = request.GET.get('token', '').strip()
+        raw_token = (token or request.GET.get('token', '')).strip()
         server_token_status = None
         server_token = ''
 
@@ -54,9 +56,13 @@ class VotingQRCodeView(View):
                 server_token_status = 'not_found'
             elif token_obj.is_used:
                 server_token_status = 'already_used'
+            elif getattr(token_obj, 'is_blocked', False):
+                server_token_status = 'blocked'
             else:
                 server_token_status = 'valid'
                 server_token = raw_token
+        else:
+            server_token_status = 'missing'
 
         response = render(request, 'voting/qrcode.html', {
             'app_name': app_name,
@@ -65,11 +71,12 @@ class VotingQRCodeView(View):
             'server_token': server_token,
         })
 
-        # Rigorous anti-cache headers
+        # Rigorous anti-cache headers and privacy policies (HTTP Response Headers)
         response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0, private'
         response['Pragma'] = 'no-cache'
         response['Expires'] = '0'
         response['X-Content-Type-Options'] = 'nosniff'
         response['X-Frame-Options'] = 'DENY'
+        response['Referrer-Policy'] = 'no-referrer'
 
         return response

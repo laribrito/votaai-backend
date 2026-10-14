@@ -40,23 +40,29 @@ class VotingTokenServiceLinkTestCase(TestCase):
 
 class VotingTokenServiceWebLinkTestCase(TestCase):
     """
-    Test suite for VotingTokenService secure URL hash fragment link generation.
+    Test suite for VotingTokenService web voting link generation (?token= and fallback formats).
     """
 
+    @override_settings(WEB_VOTING_URL='http://localhost:8000/votar/?token=')
+    def test_default_web_voting_link_query_param(self):
+        link = VotingTokenService.build_web_voting_link("secretToken456")
+        self.assertEqual(link, "http://localhost:8000/votar/?token=secretToken456")
+
+    @override_settings(WEB_VOTING_URL='https://votaai.app/votar/?token={token}')
+    def test_web_voting_link_with_placeholder(self):
+        link = VotingTokenService.build_web_voting_link("secretToken456")
+        self.assertEqual(link, "https://votaai.app/votar/?token=secretToken456")
+
+    @override_settings(WEB_VOTING_URL='https://votaai.app/votar')
+    def test_web_voting_link_appends_query_param(self):
+        link = VotingTokenService.build_web_voting_link("secretToken456")
+        self.assertEqual(link, "https://votaai.app/votar?token=secretToken456")
+
     @override_settings(WEB_VOTING_URL='http://localhost:8000/votar/#token=')
-    def test_default_web_voting_link_hash_fragment(self):
+    def test_web_voting_link_hash_fragment_backwards_compat(self):
         link = VotingTokenService.build_web_voting_link("secretToken456")
         self.assertEqual(link, "http://localhost:8000/votar/#token=secretToken456")
 
-    @override_settings(WEB_VOTING_URL='https://votaai.app/votar/#token={token}')
-    def test_web_voting_link_with_placeholder(self):
-        link = VotingTokenService.build_web_voting_link("secretToken456")
-        self.assertEqual(link, "https://votaai.app/votar/#token=secretToken456")
-
-    @override_settings(WEB_VOTING_URL='https://votaai.app/votar')
-    def test_web_voting_link_appends_hash_fragment(self):
-        link = VotingTokenService.build_web_voting_link("secretToken456")
-        self.assertEqual(link, "https://votaai.app/votar#token=secretToken456")
 
 
 from Domain.models.schemas.moderation.userSchema import User
@@ -127,6 +133,7 @@ class VotingQRCodeViewTestCase(TestCase):
         self.assertEqual(response.headers.get('Expires'), '0')
         self.assertEqual(response.headers.get('X-Content-Type-Options'), 'nosniff')
         self.assertEqual(response.headers.get('X-Frame-Options'), 'DENY')
+        self.assertEqual(response.headers.get('Referrer-Policy'), 'no-referrer')
 
         # Valida que o template contém o timer de 3 minutos e extração de hash
         content = response.content.decode('utf-8')
@@ -136,9 +143,23 @@ class VotingQRCodeViewTestCase(TestCase):
         self.assertIn('TOTAL_SECONDS = 180', content)
         self.assertIn('location.hash', content)
 
+        # Anti-flicker: sem token válido prévio, a sessão ativa NUNCA é exibida inicialmente
+        self.assertIn('id="state-no-token" class="state-card state-error" style="display: block;"', content)
+        self.assertIn('id="active-session-wrapper" style="display: none;"', content)
+
     def test_get_voting_qrcode_view_with_used_token_renders_used_card(self):
         # Validação direta pelo Django Template quando token consumido é passado via query string (?token=...)
         response = self.client.get(f'/votar/?token={self.raw_used_token}')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('Cédula Já Utilizada', content)
+        self.assertIn('id="state-already-used"', content)
+        self.assertIn('style="display: block;"', content)
+        self.assertIn('id="active-session-wrapper" style="display: none;"', content)
+
+    def test_get_voting_qrcode_view_with_path_param_used_token_renders_used_card(self):
+        # Validação direta quando token consumido é passado via path (/votar/<token>/)
+        response = self.client.get(f'/votar/{self.raw_used_token}/')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode('utf-8')
         self.assertIn('Cédula Já Utilizada', content)
@@ -155,12 +176,48 @@ class VotingQRCodeViewTestCase(TestCase):
         self.assertIn('style="display: block;"', content)
         self.assertIn('id="active-session-wrapper" style="display: none;"', content)
 
+    def test_get_voting_qrcode_view_with_path_param_invalid_token(self):
+        response = self.client.get('/votar/token_inexistente_999/')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('Cédula Não Localizada', content)
+        self.assertIn('id="state-invalid"', content)
+        self.assertIn('style="display: block;"', content)
+        self.assertIn('id="active-session-wrapper" style="display: none;"', content)
+
     def test_get_voting_qrcode_view_with_valid_token_renders_active_session(self):
         response = self.client.get(f'/votar/?token={self.raw_unused_token}')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode('utf-8')
         self.assertIn('serverTokenStatus = "valid"', content)
         self.assertIn(f'serverToken = "{self.raw_unused_token}"', content)
+        self.assertNotIn('id="active-session-wrapper" style="display: none;"', content)
+
+    def test_get_voting_qrcode_view_with_path_param_valid_token(self):
+        response = self.client.get(f'/votar/{self.raw_unused_token}/')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('serverTokenStatus = "valid"', content)
+        self.assertIn(f'serverToken = "{self.raw_unused_token}"', content)
+        self.assertNotIn('id="active-session-wrapper" style="display: none;"', content)
+
+    def test_get_voting_qrcode_view_with_blocked_token(self):
+        raw_blocked_token = "blocked_token_123"
+        blocked_token_hash = VotingTokenService._hash_token(raw_blocked_token)
+        VotingToken.objects.create(
+            token_hash=blocked_token_hash,
+            voter=self.voter1,
+            election=self.election,
+            is_used=False,
+            is_blocked=True
+        )
+        response = self.client.get(f'/votar/?token={raw_blocked_token}')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('Cédula Bloqueada', content)
+        self.assertIn('id="state-invalid"', content)
+        self.assertIn('style="display: block;"', content)
+        self.assertIn('id="active-session-wrapper" style="display: none;"', content)
 
     def test_check_token_status_endpoint_returns_already_used(self):
         response = self.client.get(f'/votar/?check=1&token_hash={self.used_token_hash}')

@@ -7,8 +7,25 @@
   <meta name="referrer" content="no-referrer">
   <title>{{ app_name|default:"Vota ai" }} - Cédula de Votação</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    (function () {
+      // Se a rota for acessada com fragmento hash (#token=...), redireciona imediatamente no head
+      // para query param (?token=...), permitindo que a view do servidor valide o token
+      // antes de enviar a resposta, evitando qualquer piscada de tela.
+      if (window.location.hash) {
+        var hashContent = window.location.hash.substring(1);
+        var hashParams = new URLSearchParams(hashContent);
+        var hToken = hashParams.get('token');
+        if (!hToken && !hashContent.includes('=')) {
+          hToken = hashContent.trim();
+        }
+        if (hToken) {
+          window.location.replace(window.location.pathname + '?token=' + encodeURIComponent(hToken));
+        }
+      }
+    })();
+  </script>
   <style>
     /* Sistema Central de Design Tokens do Vota Aí (Desktop & Mobile) */
     :root {
@@ -373,7 +390,7 @@
     </div>
 
     <!-- Estado de Erro: Nenhum Token -->
-    <div id="state-no-token" class="state-card state-error">
+    <div id="state-no-token" class="state-card state-error" {% if server_token_status == 'missing' %}style="display: block;"{% endif %}>
       <div class="state-icon">⚠️</div>
       <div class="state-title">Token de Votação Não Fornecido</div>
       <p class="state-desc">Nenhum identificador de acesso foi localizado na URL. Por favor, acesse o link enviado diretamente ao seu e-mail institucional.</p>
@@ -389,17 +406,21 @@
       </p>
     </div>
 
-    <!-- Estado de Erro: Token Não Localizado (Renderizado via Django Template ou ativado via JS) -->
-    <div id="state-invalid" class="state-card state-error" {% if server_token_status == 'not_found' %}style="display: block;"{% endif %}>
+    <!-- Estado de Erro: Token Não Localizado ou Bloqueado (Renderizado via Django Template ou ativado via JS) -->
+    <div id="state-invalid" class="state-card state-error" {% if server_token_status == 'not_found' or server_token_status == 'blocked' %}style="display: block;"{% endif %}>
       <div class="state-icon">⚠️</div>
-      <div class="state-title">Cédula Não Localizada</div>
+      <div class="state-title">{% if server_token_status == 'blocked' %}Cédula Bloqueada{% else %}Cédula Não Localizada{% endif %}</div>
       <p class="state-desc">
+        {% if server_token_status == 'blocked' %}
+        Este acesso foi bloqueado por motivos de segurança e limites de tentativas excedidos.
+        {% else %}
         O identificador de acesso informado é inválido ou não foi localizado no sistema eleitoral.
+        {% endif %}
       </p>
     </div>
 
-    <!-- Sessão Ativa: QR Code e Timer -->
-    <div id="active-session-wrapper" {% if server_token_status == 'already_used' or server_token_status == 'not_found' %}style="display: none;"{% endif %}>
+    <!-- Sessão Ativa: QR Code e Timer (exibida apenas quando o token é estritamente válido) -->
+    <div id="active-session-wrapper" {% if server_token_status != 'valid' %}style="display: none;"{% endif %}>
       <!-- Card de Expiração em Tela com Barra de Contagem Grudada -->
       <div class="timer-card">
         <div class="timer-content">
@@ -507,23 +528,18 @@
       }
 
       function extractToken() {
+        if (window.location.search) {
+          var searchParams = new URLSearchParams(window.location.search);
+          var qToken = searchParams.get('token');
+          if (qToken) return qToken.trim();
+        }
+
         if (window.location.hash) {
           var hashContent = window.location.hash.substring(1);
           var hashParams = new URLSearchParams(hashContent);
           var hToken = hashParams.get('token');
           if (hToken) return hToken.trim();
           if (!hashContent.includes('=')) return hashContent.trim();
-        }
-
-        if (window.location.search) {
-          var searchParams = new URLSearchParams(window.location.search);
-          var qToken = searchParams.get('token');
-          if (qToken) {
-            if (window.history && window.history.replaceState) {
-              window.history.replaceState(null, '', window.location.pathname + '#token=' + qToken);
-            }
-            return qToken.trim();
-          }
         }
         return null;
       }
@@ -649,8 +665,8 @@
           });
         }
 
-        // Se o servidor Django já avaliou via template que o token é inválido ou já foi usado
-        if (serverTokenStatus === 'already_used' || serverTokenStatus === 'not_found') {
+        // Se o servidor Django já avaliou via template que o token é inválido, já utilizado, bloqueado ou ausente
+        if (serverTokenStatus === 'already_used' || serverTokenStatus === 'not_found' || serverTokenStatus === 'blocked' || serverTokenStatus === 'missing') {
           if (activeWrapper) activeWrapper.style.display = 'none';
           return;
         }
@@ -668,18 +684,19 @@
           var deepLink = buildDeepLink(token);
           btnOpenApp.href = deepLink;
           renderQRCode(deepLink);
+          if (activeWrapper) activeWrapper.style.display = 'block';
           startTimer();
           return;
         }
 
-        // Caso tenha vindo pelo fragmento da URL (#token=...), verifica assincronamente com o backend
+        // Caso de contingência assíncrona (se o hash não tiver sido redirecionado imediatamente)
         checkTokenStatus(token, function (status) {
           if (status === 'already_used') {
             if (activeWrapper) activeWrapper.style.display = 'none';
             if (stateAlreadyUsed) stateAlreadyUsed.style.display = 'block';
             return;
           }
-          if (status === 'not_found') {
+          if (status === 'not_found' || status === 'blocked') {
             if (activeWrapper) activeWrapper.style.display = 'none';
             if (stateInvalid) stateInvalid.style.display = 'block';
             return;
@@ -688,6 +705,7 @@
           var deepLink = buildDeepLink(token);
           btnOpenApp.href = deepLink;
           renderQRCode(deepLink);
+          if (activeWrapper) activeWrapper.style.display = 'block';
           startTimer();
         });
       }

@@ -194,8 +194,8 @@ ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/e
 # Suporta prefixo com query param (ex: votaai://votar/?token=), path com barra ou template {token}
 MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')
 
-# Link / URL web para exibição segura do QR Code (fragmento de hash seguro com #token=)
-WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/#token=')
+# Link / URL web para exibição segura do QR Code (validação direta na View com ?token=)
+WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/?token=')
 
 # Limite máximo de tentativas inválidas de solicitação de voto antes do bloqueio
 VOTING_TOKEN_MAX_FAILED_ATTEMPTS = config('VOTING_TOKEN_MAX_FAILED_ATTEMPTS', default=3, cast=int)
