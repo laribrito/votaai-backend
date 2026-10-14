@@ -197,3 +197,96 @@ MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token='
 # Link / URL web para exibição segura do QR Code (fragmento de hash seguro com #token=)
 WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/#token=')
 
+# Limite máximo de tentativas inválidas de solicitação de voto antes do bloqueio
+VOTING_TOKEN_MAX_FAILED_ATTEMPTS = config('VOTING_TOKEN_MAX_FAILED_ATTEMPTS', default=3, cast=int)
+
+# Exigência estrita de atestação de hardware Android KeyStore (TEE / StrongBox)
+# Em produção deve ser True. Pode ser False em desenvolvimento/testes locais.
+REQUIRE_HARDWARE_ATTESTATION = config('REQUIRE_HARDWARE_ATTESTATION', default=True, cast=bool)
+
+# ==============================================================================
+# AUDITORIA E LOGGING DO SISTEMA
+# ==============================================================================
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_LEVEL = config('LOG_LEVEL', default='INFO')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'audit': {
+            'format': '[{asctime}] [{levelname}] [{name}] ({module}.{funcName}:{lineno}): {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '[{levelname}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'audit',
+            'level': LOG_LEVEL,
+        },
+        'audit_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'audit.log'),
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB por arquivo
+            'backupCount': 10,             # Mantém até 10 backups rotacionados
+            'formatter': 'audit',
+            'encoding': 'utf-8',
+            'level': LOG_LEVEL,
+        },
+    },
+    'root': {
+        'handlers': ['console', 'audit_file'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Api': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Controllers': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Domain': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Infrastructure': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Core': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}
+
