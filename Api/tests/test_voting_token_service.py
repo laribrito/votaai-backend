@@ -241,3 +241,31 @@ class VotingQRCodeViewTestCase(TestCase):
         self.assertFalse(data.get('is_used'))
 
 
+
+    def test_secure_qr_code_encryption_and_decryption(self):
+        import base64
+        import json
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        link = VotingTokenService.build_secure_qr_link("MeuTokenSeguro123", "eleicao-teste")
+        self.assertTrue(link.startswith("votaai://votar/?data="))
+        b64_payload = link.replace("votaai://votar/?data=", "")
+
+        # Simula a decifragem do Mobile com a chave simétrica
+        key = base64.b64decode('ia7h7dDz0y2V/7aqy49m5pRg6XRrTDKvUqXGQnZXa1o=')
+        blob = base64.b64decode(b64_payload)
+        iv = blob[:12]
+        ct = blob[12:]
+        aesgcm = AESGCM(key)
+        decrypted_bytes = aesgcm.decrypt(iv, ct, None)
+        payload = json.loads(decrypted_bytes.decode('utf-8'))
+
+        self.assertEqual(payload['token'], "MeuTokenSeguro123")
+        self.assertEqual(payload['election_id'], "eleicao-teste")
+        self.assertIn('ts', payload)
+
+    def test_voting_qrcode_view_renders_encrypted_qr_code(self):
+        response = self.client.get(f'/votar/?token={self.raw_unused_token}')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('votaai://votar/?data', content)
