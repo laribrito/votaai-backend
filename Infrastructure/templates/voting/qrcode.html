@@ -505,6 +505,7 @@
 
       var serverTokenStatus = "{{ server_token_status|default:'' }}";
       var serverToken = "{{ server_token|default:'' }}";
+      var serverSecureQrCode = "{{ secure_qr_code|default:''|escapejs }}";
 
       // Elementos do DOM
       var activeWrapper = document.getElementById('active-session-wrapper');
@@ -650,7 +651,7 @@
           })
           .then(function (res) { return res.json(); })
           .then(function (data) {
-            callback(data.status || 'valid');
+            callback(data.status || 'valid', data.secure_qr_code);
           })
           .catch(function () {
             callback('valid');
@@ -681,16 +682,16 @@
 
         // Se o servidor Django já validou este token como válido
         if (serverTokenStatus === 'valid') {
-          var deepLink = buildDeepLink(token);
-          btnOpenApp.href = deepLink;
-          renderQRCode(deepLink);
+          var qrPayload = serverSecureQrCode || buildDeepLink(token);
+          btnOpenApp.href = qrPayload;
+          renderQRCode(qrPayload);
           if (activeWrapper) activeWrapper.style.display = 'block';
           startTimer();
           return;
         }
 
         // Caso de contingência assíncrona (se o hash não tiver sido redirecionado imediatamente)
-        checkTokenStatus(token, function (status) {
+        checkTokenStatus(token, function (status, asyncSecureQrCode) {
           if (status === 'already_used') {
             if (activeWrapper) activeWrapper.style.display = 'none';
             if (stateAlreadyUsed) stateAlreadyUsed.style.display = 'block';
@@ -702,9 +703,9 @@
             return;
           }
 
-          var deepLink = buildDeepLink(token);
-          btnOpenApp.href = deepLink;
-          renderQRCode(deepLink);
+          var qrPayload = asyncSecureQrCode || serverSecureQrCode || buildDeepLink(token);
+          btnOpenApp.href = qrPayload;
+          renderQRCode(qrPayload);
           if (activeWrapper) activeWrapper.style.display = 'block';
           startTimer();
         });

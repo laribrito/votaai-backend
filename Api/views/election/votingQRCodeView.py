@@ -17,6 +17,7 @@ class VotingQRCodeView(View):
     Security & Validation design:
     - Server-side validation via Django template when ?token= is provided.
     - Ephemeral client-side validation endpoint when #token= is provided via URL hash.
+    - Encrypts QR code with AES-256-GCM symmetric key so only VotaAí mobile app can read.
     - Anti-cache headers enforce that browsers, proxies, and intermediaries never cache the page.
     """
 
@@ -39,7 +40,16 @@ class VotingQRCodeView(View):
                 return JsonResponse({'status': 'already_used', 'is_used': True})
             if getattr(token_obj, 'is_blocked', False):
                 return JsonResponse({'status': 'blocked', 'is_used': False})
-            return JsonResponse({'status': 'valid', 'is_used': False})
+
+            secure_qr_code = ''
+            if raw_token:
+                try:
+                    election_id = str(token_obj.election_id) if hasattr(token_obj, 'election_id') else ''
+                    secure_qr_code = VotingTokenService.build_secure_qr_link(raw_token, election_id)
+                except Exception:
+                    secure_qr_code = ''
+
+            return JsonResponse({'status': 'valid', 'is_used': False, 'secure_qr_code': secure_qr_code})
 
         # 2. Renderização do Template Django (Validação no Servidor)
         app_name = getattr(settings, 'APP_NAME', 'Vota-ai')
@@ -48,6 +58,7 @@ class VotingQRCodeView(View):
         raw_token = (token or request.GET.get('token', '')).strip()
         server_token_status = None
         server_token = ''
+        secure_qr_code = ''
 
         if raw_token:
             token_hash = VotingTokenService._hash_token(raw_token)
@@ -61,6 +72,11 @@ class VotingQRCodeView(View):
             else:
                 server_token_status = 'valid'
                 server_token = raw_token
+                try:
+                    election_id = str(token_obj.election_id) if hasattr(token_obj, 'election_id') else ''
+                    secure_qr_code = VotingTokenService.build_secure_qr_link(raw_token, election_id)
+                except Exception:
+                    secure_qr_code = ''
         else:
             server_token_status = 'missing'
 
@@ -69,6 +85,7 @@ class VotingQRCodeView(View):
             'mobile_url_prefix': mobile_url,
             'server_token_status': server_token_status,
             'server_token': server_token,
+            'secure_qr_code': secure_qr_code,
         })
 
         # Rigorous anti-cache headers and privacy policies (HTTP Response Headers)

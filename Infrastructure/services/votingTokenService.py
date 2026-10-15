@@ -36,6 +36,40 @@ class VotingTokenService:
         return f"{mobile_url}?token={raw_token}"
 
     @classmethod
+    def encrypt_qr_payload(cls, data: dict, key_b64: str = None) -> str:
+        """
+        Encrypts voting data using AES-256-GCM authenticated encryption (AEAD).
+        Returns a base64 encoded string of [12 bytes IV] + [Ciphertext] + [16 bytes Tag].
+        """
+        import base64
+        import json
+        import os
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        key_str = key_b64 or getattr(settings, 'QR_CODE_SECRET_KEY', 'ia7h7dDz0y2V/7aqy49m5pRg6XRrTDKvUqXGQnZXa1o=')
+        key = base64.b64decode(key_str.strip())
+        aesgcm = AESGCM(key)
+        iv = os.urandom(12)
+        payload_bytes = json.dumps(data, separators=(',', ':')).encode('utf-8')
+        ct_with_tag = aesgcm.encrypt(iv, payload_bytes, None)
+        full_blob = iv + ct_with_tag
+        return base64.b64encode(full_blob).decode('ascii')
+
+    @classmethod
+    def build_secure_qr_link(cls, raw_token: str, election_id: str = '') -> str:
+        """
+        Builds the secure encrypted mobile QR Code deep link: votaai://votar/?data=<b64>
+        """
+        import time
+        payload = {
+            'token': raw_token.strip(),
+            'election_id': str(election_id) if election_id else '',
+            'ts': int(time.time() * 1000)
+        }
+        b64 = cls.encrypt_qr_payload(payload)
+        return f"votaai://votar/?data={b64}"
+
+    @classmethod
     def build_web_voting_link(cls, raw_token: str) -> str:
         """
         Builds the web voting link pointing to the ephemeral QR code page.
