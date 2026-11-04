@@ -113,7 +113,13 @@ class ElectionActions:
             })
 
         # Creator is the user bound to this machine public key
-        creator_user = User.objects.filter(machine_public_key=machine_pub_key).first()
+        norm_machine_pub_key = SECryptoService.to_pem_public_key(machine_pub_key)
+        creator_user = User.objects.filter(machine_public_key=norm_machine_pub_key).first()
+        if not creator_user:
+            creator_user = User.objects.filter(machine_public_key=machine_pub_key).first()
+
+        # Normalize public key to PEM format for cross-platform interoperability
+        normalized_public_key = SECryptoService.to_pem_public_key(public_key)
 
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():
@@ -124,7 +130,7 @@ class ElectionActions:
 
             election = Election.objects.create(
                 title=title,
-                public_key=public_key,
+                public_key=normalized_public_key,
                 key_handle=key_handle,
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,

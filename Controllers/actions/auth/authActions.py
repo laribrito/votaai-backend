@@ -72,7 +72,9 @@ class AuthActions:
                 "device_id": f"Access denied: this machine ({device_id}) is not authorized for this administrator user."
             })
 
-        if machine_public_key != user.machine_public_key.strip().replace('\r\n', '\n'):
+        norm_sent_key = SECryptoService.to_pem_public_key(machine_public_key)
+        norm_user_key = SECryptoService.to_pem_public_key(user.machine_public_key)
+        if norm_sent_key != norm_user_key:
             raise ValidationError({
                 "machine_public_key": "Access denied: the machine public key does not match the one registered for this user."
             })

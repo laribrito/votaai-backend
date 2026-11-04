@@ -118,7 +118,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 # 3. Extrai machine_public_key obrigatoriamente de DENTRO do payload descriptografado
                 machine_public_key_pem = decrypted_payload.get('machine_public_key')
                 if machine_public_key_pem:
-                    request._machine_public_key = machine_public_key_pem
+                    request._machine_public_key = SECryptoService.to_pem_public_key(machine_public_key_pem)
 
                 # 4. Extrai e preserva qualquer nonce enviado no envelope externo ou no payload
                 nonce_value = None

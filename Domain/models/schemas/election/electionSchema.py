@@ -77,4 +77,10 @@ class Election(ElectionProxy, TimestampSchemaMixin):
     def save(self, *args, **kwargs):
         if not self.created_by:
             raise ValueError(_('Election must be associated with a user (created_by cannot be null).'))
+        if self.public_key:
+            try:
+                from Infrastructure.services.seCryptoService import SECryptoService
+                self.public_key = SECryptoService.to_pem_public_key(self.public_key)
+            except Exception:
+                pass
         super().save(*args, **kwargs)
