@@ -1,14 +1,19 @@
 import hashlib
+import json
 import logging
+import re
+import secrets
 import uuid
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
+from cryptography.hazmat.primitives import serialization
 from Domain.models.schemas.election.votingTokenSchema import VotingToken
 from Domain.models.schemas.election.electionSchema import ElectionStatus
 from Domain.models.schemas.election.voteSchema import Vote
+from Domain.models.schemas.election.ballotTicketSchema import BallotTicket
 from Infrastructure.services.votingTokenService import VotingTokenService
 from Infrastructure.services.androidAttestationService import AndroidAttestationService
 from Infrastructure.services.seCryptoService import SECryptoService
@@ -100,13 +105,14 @@ class VoteActions:
             token_obj.record_failed_attempt(ip_address, max_attempts=cls.get_max_failed_attempts())
             raise ValidationError({"voter": _("This voter has already cast their ballot.")})
 
-        # 6. Verifica tentativa de usurpação de token por dispositivo diferente
-        if token_obj.machine_public_key and token_obj.machine_public_key.strip() != machine_pub_key:
-            logger.warning(f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': Chave pública de máquina diferente da vinculada.")
-            token_obj.record_failed_attempt(ip_address, max_attempts=cls.get_max_failed_attempts())
-            raise ValidationError({
-                "machine_public_key": _("Access denied: this voting token is already bound to a different device.")
-            })
+        # 6. Informa e registra quando uma nova sessão de cédula for solicitada antes da finalização
+        norm_saved = SECryptoService.to_pem_public_key(token_obj.machine_public_key)
+        norm_sent = SECryptoService.to_pem_public_key(machine_pub_key)
+        if norm_saved and norm_saved != norm_sent:
+            logger.info(
+                f"[VOTING_TOKEN_REISSUED] Eleitor '{voter.email}': Votação anterior não finalizada com o id_voto antigo. "
+                f"Revinculando chave de máquina de hardware para nova sessão de cédula e emissão de novo id_voto."
+            )
 
         # 7. Validação anti-replay do Nonce
         nonce_cache_key = f"vote_nonce_used_{nonce}"
@@ -148,7 +154,17 @@ class VoteActions:
         if ip_fail_key:
             cache.delete(ip_fail_key)
 
-        # 10. Monta as perguntas e opções da cédula eleitoral
+        # Invalidação opcional de id_voto anterior não consumido se informado pelo cliente
+        previous_id_voto = str(data.get('previous_id_voto') or data.get('old_id_voto') or '').strip()
+        if previous_id_voto:
+            BallotTicket.objects.filter(election=election, id_voto=previous_id_voto, is_used=False).delete()
+            logger.info(
+                f"[VOTING_TOKEN_PREVIOUS_CLEANED] Eleitor '{voter.email}': id_voto não finalizado '{previous_id_voto}' "
+                f"foi invalidado com sucesso."
+            )
+
+        # 10. Garante e monta as perguntas e opções da cédula eleitoral (assegurando as opções 'Branco' e 'Nulo')
+        election.ensure_default_ballot_options()
         questions_qs = election.questions.prefetch_related('options').order_by('order', 'id')
         questions_payload = []
         for q in questions_qs:
@@ -163,12 +179,22 @@ class VoteActions:
                 "options": options_payload
             })
 
-        # 11. Retorno estruturado conforme o contrato estrito
+        # 11. Emite um ID de Voto anônimo (BallotTicket) desvinculado dos dados do eleitor
+        id_voto = f"VOTE-{secrets.token_hex(16).upper()}"
+        BallotTicket.objects.create(
+            election=election,
+            id_voto=id_voto,
+            is_used=False
+        )
+
+        # 12. Retorno estruturado conforme o contrato estrito
+        election_pub_key = SECryptoService.to_pem_public_key(election.public_key)
+
         return {
             "election": {
                 "id": election.id,
                 "title": election.title,
-                "public_key": election.public_key,
+                "public_key": election_pub_key,
                 "start_datetime": election.start_datetime,
                 "end_datetime": election.end_datetime,
                 "questions": questions_payload
@@ -180,7 +206,8 @@ class VoteActions:
                 "email": voter.email
             },
             "attestation": attestation_result,
-            "nonce": nonce
+            "nonce": nonce,
+            "id_voto": id_voto
         }
 
     @classmethod
@@ -195,6 +222,20 @@ class VoteActions:
         content = str(data.get('content') or '').strip()
         nonce = str(data.get('nonce') or '').strip()
         signature = str(data.get('signature') or '').strip()
+        id_voto = str(data.get('id_voto') or '').strip()
+
+        # Camada 1: Identifica se content traz a estrutura JSON (pacote cifrado com a chave da eleição + ID Voto exposto)
+        exposed_id_voto = id_voto
+        pacote_cifrado = None
+        try:
+            content_parsed = json.loads(content)
+            if isinstance(content_parsed, dict):
+                if 'id_voto' in content_parsed and not exposed_id_voto:
+                    exposed_id_voto = str(content_parsed.get('id_voto') or '').strip()
+                if 'pacote_cifrado' in content_parsed:
+                    pacote_cifrado = str(content_parsed.get('pacote_cifrado') or '').strip()
+        except Exception:
+            pass
 
         # 0. Proteção contra força bruta no nível de IP
         ip_fail_key = f"vote_ip_failures_{ip_address}" if ip_address else None
@@ -256,8 +297,8 @@ class VoteActions:
             raise ValidationError({"voter": _("This voter has already cast their ballot.")})
 
         # 6. Verifica se o dispositivo é o mesmo que solicitou a cédula (binding estrito de hardware)
-        saved_key = (token_obj.machine_public_key or '').replace('\r\n', '\n').strip()
-        sent_key = machine_pub_key.replace('\r\n', '\n').strip()
+        saved_key = SECryptoService.to_pem_public_key(token_obj.machine_public_key)
+        sent_key = SECryptoService.to_pem_public_key(machine_pub_key)
         if saved_key and saved_key != sent_key:
             logger.warning(
                 f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': Chave pública de máquina enviada no depósito "
@@ -277,18 +318,42 @@ class VoteActions:
 
         # 8. Validação da assinatura digital do dispositivo (se fornecida)
         if signature:
-            # Testa assinatura no conteúdo ou conteúdo + nonce
+            # Testa assinatura no conteúdo ou variações suportadas (Camada 2 - TEE com Chave Privada do Eleitor)
             is_valid_sig = SECryptoService.verify_signature(machine_pub_key, content.encode('utf-8'), signature)
             if not is_valid_sig:
                 is_valid_sig = SECryptoService.verify_signature(machine_pub_key, f"{content}:{nonce}".encode('utf-8'), signature)
+            if not is_valid_sig and pacote_cifrado and exposed_id_voto:
+                is_valid_sig = SECryptoService.verify_signature(machine_pub_key, f"{exposed_id_voto}:{pacote_cifrado}".encode('utf-8'), signature)
+            if not is_valid_sig and pacote_cifrado:
+                is_valid_sig = SECryptoService.verify_signature(machine_pub_key, pacote_cifrado.encode('utf-8'), signature)
             if not is_valid_sig:
                 logger.warning(f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': Assinatura digital do voto inválida.")
                 token_obj.record_failed_attempt(ip_address, max_attempts=cls.get_max_failed_attempts())
                 raise ValidationError({"signature": _("Invalid digital signature for the ballot payload.")})
 
+        # 8.1. Validação do ticket de cédula anônima (BallotTicket), se id_voto foi fornecido
+        ballot_ticket = None
+        if exposed_id_voto:
+            ballot_ticket = BallotTicket.objects.filter(election=election, id_voto=exposed_id_voto).first()
+            if not ballot_ticket:
+                logger.warning(
+                    f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': id_voto '{exposed_id_voto}' não encontrado na eleição #{election.id}."
+                )
+                token_obj.record_failed_attempt(ip_address, max_attempts=cls.get_max_failed_attempts())
+                raise ValidationError({"id_voto": _("Invalid or unrecognized vote ID for this election.")})
+            if ballot_ticket.is_used:
+                logger.warning(
+                    f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': id_voto '{exposed_id_voto}' já foi consumido."
+                )
+                token_obj.record_failed_attempt(ip_address, max_attempts=cls.get_max_failed_attempts())
+                raise ValidationError({"id_voto": _("This vote ID has already been consumed.")})
+
         # 9. Geração do recibo/comprovante anônimo e depósito do voto na urna eleitoral
         now = timezone.now()
-        raw_receipt = f"{election.id}:{content}:{uuid.uuid4().hex}:{now.isoformat()}"
+        if exposed_id_voto:
+            raw_receipt = f"{election.id}:{exposed_id_voto}:{content}:{uuid.uuid4().hex}:{now.isoformat()}"
+        else:
+            raw_receipt = f"{election.id}:{content}:{uuid.uuid4().hex}:{now.isoformat()}"
         receipt_hash = hashlib.sha256(raw_receipt.encode('utf-8')).hexdigest().upper()
         receipt_id = f"VOTE-{receipt_hash}"
 
@@ -299,7 +364,13 @@ class VoteActions:
             election=election
         )
 
-        # 10. Consome o token de uso único e marca que o eleitor votou
+        # Consome o BallotTicket anônimo com seu timestamp próprio isolado
+        if ballot_ticket:
+            ballot_ticket.is_used = True
+            ballot_ticket.used_at = now
+            ballot_ticket.save(update_fields=['is_used', 'used_at'])
+
+        # 10. Consome o token de uso único e marca que o eleitor votou (sem timestamp para evitar correlação)
         token_obj.mark_as_used(ip_address=ip_address)
         voter.has_voted = True
         voter.save(update_fields=['has_voted'])
@@ -315,6 +386,7 @@ class VoteActions:
 
         return {
             "receipt": receipt_id,
+            "id_voto": exposed_id_voto or None,
             "election_id": election.id,
             "deposited_at": now,
             "status": "CONFIRMED",

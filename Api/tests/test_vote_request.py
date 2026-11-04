@@ -103,7 +103,7 @@ class VoteRequestViewTests(APITestCase):
         self.default_nonce = "nonce-strongbox-001"
         self.url = reverse('vote-request')
 
-    def _generate_mock_attestation_cert(self, security_level: int, challenge: str = None) -> str:
+    def _generate_mock_attestation_cert(self, security_level: int, challenge: str = None, key=None) -> str:
         """
         Gera um certificado X.509 mock contendo a extensão Android Key Attestation (OID 1.3.6.1.4.1.11129.2.1.17).
         security_level:
@@ -111,6 +111,7 @@ class VoteRequestViewTests(APITestCase):
             1 = TrustedEnvironment (TEE)
             2 = StrongBox (Hardware dedicado)
         """
+        target_key = key or self.device_private_key
         ch_bytes = (challenge or self.default_nonce).encode('utf-8')
         inner_asn1 = (
             b'\x02\x01\x03' +  # attestationVersion = 3
@@ -130,7 +131,7 @@ class VoteRequestViewTests(APITestCase):
         ).issuer_name(
             issuer
         ).public_key(
-            self.device_private_key.public_key()
+            target_key.public_key()
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
@@ -140,7 +141,7 @@ class VoteRequestViewTests(APITestCase):
         ).add_extension(
             x509.UnrecognizedExtension(x509.ObjectIdentifier('1.3.6.1.4.1.11129.2.1.17'), ext_value),
             critical=False
-        ).sign(self.device_private_key, hashes.SHA256())
+        ).sign(target_key, hashes.SHA256())
 
         return cert.public_bytes(serialization.Encoding.PEM).decode('utf-8')
 
@@ -208,12 +209,20 @@ class VoteRequestViewTests(APITestCase):
         self.assertEqual(data['election']['id'], self.election.id)
         self.assertEqual(data['election']['title'], "Eleição Diretoria Geral 2026")
         self.assertEqual(len(data['election']['questions']), 1)
-        self.assertEqual(len(data['election']['questions'][0]['options']), 2)
+        self.assertEqual(len(data['election']['questions'][0]['options']), 4)
+        option_labels = [opt['label'] for opt in data['election']['questions'][0]['options']]
+        self.assertIn("Chapa 1 - Renovação", option_labels)
+        self.assertIn("Chapa 2 - Continuidade", option_labels)
+        self.assertIn("Branco", option_labels)
+        self.assertIn("Nulo", option_labels)
 
         self.assertEqual(data['voter']['email'], "maria.silva@votaai.org")
         self.assertEqual(data['voter']['nickname'], "Maria")
 
         self.assertEqual(data['nonce'], self.default_nonce)
+        self.assertIn('id_voto', data)
+        self.assertIsNotNone(data['id_voto'])
+        self.assertTrue(data['id_voto'].startswith('VOTE-'))
         self.assertTrue(data['attestation']['is_hardware_backed'])
         self.assertEqual(data['attestation']['security_level'], "StrongBox")
         self.assertTrue(data['attestation']['verified'])
@@ -247,51 +256,101 @@ class VoteRequestViewTests(APITestCase):
         data2 = self._decrypt_response_body(res2)
         self.assertIn('nonce', data2)
 
-    def test_vote_request_different_device_rejected(self):
+    def test_vote_request_allows_new_id_voto_if_vote_not_finalized(self):
         """
-        Se o token já foi vinculado a um dispositivo, a tentativa de uso por outro dispositivo
-        deve ser rejeitada e contabilizada como tentativa inválida.
+        Se o usuário não finalizou a votação com o id antigo (is_used=False e has_voted=False),
+        ele deve poder solicitar novamente a cédula e gerar outro id_voto com sucesso,
+        revinculando a chave de máquina à nova sessão de atestação.
         """
-        # Vincula o token à primeira chave
-        self.voting_token.machine_public_key = self.device_public_pem
-        self.voting_token.save()
+        # 1ª solicitação de cédula: gera id_voto_1
+        nonce_1 = "nonce-session-1-abc"
+        cert_1 = self._generate_mock_attestation_cert(security_level=2, challenge=nonce_1)
+        payload_1 = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "attestation_certificates": [cert_1],
+            "nonce": nonce_1
+        }
+        res_1 = self.client.post(self.url, data=self._encrypt_request_body(payload_1), format='json')
+        self.assertEqual(res_1.status_code, status.HTTP_200_OK)
+        data_1 = self._decrypt_response_body(res_1)
+        id_voto_1 = data_1.get('id_voto')
+        self.assertTrue(id_voto_1 and id_voto_1.startswith('VOTE-'))
 
-        # Gera segunda chave de um dispositivo invasor/diferente
+        # O eleitor NÃO finalizou a votação (não chamou /api/vote/cast/)
+        self.voting_token.refresh_from_db()
+        self.assertFalse(self.voting_token.is_used)
+        self.assertFalse(self.voter.has_voted)
+
+        # 2ª solicitação de cédula (nova sessão / dispositivo com chave nova)
         other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         other_pub_pem = other_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8')
-
-        nonce_invader = "nonce-different-device-123"
-        strongbox_cert = self._generate_mock_attestation_cert(security_level=2, challenge=nonce_invader)
-
-        payload = {
+        nonce_2 = "nonce-session-2-xyz"
+        cert_2 = self._generate_mock_attestation_cert(security_level=2, challenge=nonce_2, key=other_key)
+        payload_2 = {
             "token": self.raw_token,
             "machine_public_key": other_pub_pem,
-            "attestation_certificates": [strongbox_cert],
-            "nonce": nonce_invader
+            "attestation_certificates": [cert_2],
+            "nonce": nonce_2
         }
-        body = self._encrypt_request_body(payload)
+        res_2 = self.client.post(self.url, data=self._encrypt_request_body(payload_2), format='json')
+        self.assertEqual(res_2.status_code, status.HTTP_200_OK)
 
-        response = self.client.post(self.url, data=body, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # A resposta é cifrada de volta para a chave enviada no payload (other_key)
-        enc_json = response.json()
-        enc_aes_key = other_key.decrypt(base64.b64decode(enc_json["encrypted_aes_key"]), padding.PKCS1v15())
+        # Decifra com other_key
+        enc_json_2 = res_2.json()
+        enc_aes_key = other_key.decrypt(base64.b64decode(enc_json_2["encrypted_aes_key"]), padding.PKCS1v15())
         aesgcm = AESGCM(enc_aes_key)
-        decrypted = json.loads(aesgcm.decrypt(
-            base64.b64decode(enc_json["iv"]),
-            base64.b64decode(enc_json["encrypted_payload"]) + base64.b64decode(enc_json["tag"]),
+        data_2 = json.loads(aesgcm.decrypt(
+            base64.b64decode(enc_json_2["iv"]),
+            base64.b64decode(enc_json_2["encrypted_payload"]) + base64.b64decode(enc_json_2["tag"]),
             None
         ).decode('utf-8'))
 
-        self.assertIn('machine_public_key', decrypted)
+        id_voto_2 = data_2.get('id_voto')
+        self.assertTrue(id_voto_2 and id_voto_2.startswith('VOTE-'))
+        self.assertNotEqual(id_voto_1, id_voto_2)
 
-        # Verifica que contabilizou falha
-        self.voting_token.refresh_from_db()
-        self.assertEqual(self.voting_token.failed_attempts, 1)
+    def test_vote_request_cleans_up_previous_id_voto_when_specified(self):
+        """
+        Se o cliente enviar previous_id_voto ao solicitar nova cédula, o ticket anterior não utilizado
+        deve ser invalidado/removido do banco de dados.
+        """
+        from Domain.models.schemas.election.ballotTicketSchema import BallotTicket
+
+        # 1ª solicitação
+        nonce_1 = "nonce-cleanup-1"
+        cert_1 = self._generate_mock_attestation_cert(security_level=2, challenge=nonce_1)
+        payload_1 = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "attestation_certificates": [cert_1],
+            "nonce": nonce_1
+        }
+        res_1 = self.client.post(self.url, data=self._encrypt_request_body(payload_1), format='json')
+        self.assertEqual(res_1.status_code, status.HTTP_200_OK)
+        id_voto_1 = self._decrypt_response_body(res_1).get('id_voto')
+        self.assertTrue(BallotTicket.objects.filter(id_voto=id_voto_1).exists())
+
+        # 2ª solicitação informando previous_id_voto
+        nonce_2 = "nonce-cleanup-2"
+        cert_2 = self._generate_mock_attestation_cert(security_level=2, challenge=nonce_2)
+        payload_2 = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "attestation_certificates": [cert_2],
+            "nonce": nonce_2,
+            "previous_id_voto": id_voto_1
+        }
+        res_2 = self.client.post(self.url, data=self._encrypt_request_body(payload_2), format='json')
+        self.assertEqual(res_2.status_code, status.HTTP_200_OK)
+        id_voto_2 = self._decrypt_response_body(res_2).get('id_voto')
+
+        # Ticket anterior deve ter sido removido e o novo deve existir
+        self.assertFalse(BallotTicket.objects.filter(id_voto=id_voto_1).exists())
+        self.assertTrue(BallotTicket.objects.filter(id_voto=id_voto_2).exists())
 
     def test_vote_request_excessive_failed_attempts_locks_token(self):
         """
@@ -470,3 +529,72 @@ class VoteRequestViewTests(APITestCase):
 
         data = self._decrypt_response_body(response)
         self.assertIn('voter', data)
+
+    def test_vote_request_includes_branco_and_nulo_on_multiple_questions(self):
+        """
+        Garante que todas as perguntas da cédula enviada ao eleitor contenham
+        as opções 'Branco' e 'Nulo'.
+        """
+        # Cria uma segunda pergunta na eleição
+        q2 = Question.objects.create(
+            election=self.election,
+            question="Quem deve ser o Diretor Financeiro?",
+            order=2
+        )
+        Option.objects.create(question=q2, label="Candidato X")
+        Option.objects.create(question=q2, label="Candidato Y")
+
+        nonce = "nonce-multi-questions"
+        strongbox_cert = self._generate_mock_attestation_cert(security_level=2, challenge=nonce)
+        payload = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "attestation_certificates": [strongbox_cert],
+            "nonce": nonce
+        }
+        body = self._encrypt_request_body(payload)
+
+        response = self.client.post(self.url, data=body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = self._decrypt_response_body(response)
+        questions = data['election']['questions']
+        self.assertEqual(len(questions), 2)
+
+        for q in questions:
+            labels = [opt['label'] for opt in q['options']]
+            self.assertIn("Branco", labels)
+            self.assertIn("Nulo", labels)
+            # Confirma que cada opção tem um ID inteiro positivo
+            for opt in q['options']:
+                self.assertIsInstance(opt['id'], int)
+                self.assertGreater(opt['id'], 0)
+
+    def test_vote_request_does_not_duplicate_existing_branco_or_nulo(self):
+        """
+        Se a questão já possuir 'Branco' ou 'Nulo' previamente cadastrados,
+        não deve duplicar as opções na cédula enviada.
+        """
+        Option.objects.create(question=self.question, label="Branco")
+        Option.objects.create(question=self.question, label="Nulo")
+
+        nonce = "nonce-no-duplicates"
+        strongbox_cert = self._generate_mock_attestation_cert(security_level=2, challenge=nonce)
+        payload = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "attestation_certificates": [strongbox_cert],
+            "nonce": nonce
+        }
+        body = self._encrypt_request_body(payload)
+
+        response = self.client.post(self.url, data=body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = self._decrypt_response_body(response)
+        options = data['election']['questions'][0]['options']
+        labels = [opt['label'] for opt in options]
+        self.assertEqual(labels.count("Branco"), 1)
+        self.assertEqual(labels.count("Nulo"), 1)
+        self.assertEqual(len(options), 4)
+

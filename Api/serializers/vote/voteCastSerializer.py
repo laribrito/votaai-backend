@@ -45,6 +45,12 @@ class VoteCastSerializer(serializers.Serializer):
         default='',
         help_text='Optional digital signature produced by StrongBox hardware over the vote payload.'
     )
+    id_voto = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+        help_text='Exposed vote ID for verification and audit tracking.'
+    )
 
 
 class VoteCastResponseSerializer(serializers.Serializer):
@@ -70,4 +76,10 @@ class VoteCastResponseSerializer(serializers.Serializer):
         allow_null=True,
         default=None,
         help_text='Echoed client nonce.'
+    )
+    id_voto = serializers.CharField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text='Echoed exposed vote ID from the ballot package.'
     )

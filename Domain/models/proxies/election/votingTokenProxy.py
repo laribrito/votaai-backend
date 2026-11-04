@@ -1,6 +1,7 @@
 import logging
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from Infrastructure.services.seCryptoService import SECryptoService
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +13,13 @@ class VotingTokenProxy:
     """
 
     def mark_as_used(self, ip_address: str = None) -> None:
-        """Marks the token as used, recording timestamp and optional IP address."""
-        from django.utils import timezone
+        """
+        Marks the token as used without recording exact voting timestamp,
+        preventing temporal linkage with anonymous ballot tickets in the database.
+        """
         self.is_used = True
-        self.used_at = timezone.now()
-        if ip_address:
-            self.used_ip = ip_address
+        self.used_at = None
+        self.used_ip = None
         self.save(update_fields=['is_used', 'used_at', 'used_ip'])
 
     def record_failed_attempt(self, ip_address: str = None, max_attempts: int = None) -> None:
@@ -61,14 +63,13 @@ class VotingTokenProxy:
         """
         Records a successful ballot request.
         Resets failed_attempts, binds machine_public_key and latest nonce.
+        Omits exact millisecond timestamp to prevent temporal linkage with anonymous ballot tickets.
         """
-        from django.utils import timezone
         self.failed_attempts = 0
-        self.machine_public_key = machine_public_key
+        self.machine_public_key = SECryptoService.to_pem_public_key(machine_public_key)
         self.nonce = nonce
-        self.last_attempt_at = timezone.now()
-        if ip_address:
-            self.last_attempt_ip = ip_address
+        self.last_attempt_at = None
+        self.last_attempt_ip = None
 
         voter_email = getattr(getattr(self, 'voter', None), 'email', 'desconhecido')
         logger.info(

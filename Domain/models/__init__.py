@@ -6,6 +6,7 @@ from .schemas.election.electoralCollegeSchema import ElectoralCollege
 from .schemas.election.voteSchema import Vote
 from .schemas.election.votingTokenSchema import VotingToken
 from .schemas.election.tallySchema import Tally
+from .schemas.election.ballotTicketSchema import BallotTicket
 from .groupChoices import GroupRoles
 from .permissionChoices import DomainPermissions
 
@@ -19,6 +20,7 @@ __all__ = [
     'Vote',
     'VotingToken',
     'Tally',
+    'BallotTicket',
     'GroupRoles',
     'DomainPermissions',
 ]
