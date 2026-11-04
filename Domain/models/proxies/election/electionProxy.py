@@ -27,3 +27,12 @@ class ElectionProxy:
             from Domain.models.schemas.election.optionSchema import Option
             return Option.objects.filter(question__election=self).count()
         return 0
+
+    def ensure_default_ballot_options(self):
+        """
+        Garante que todas as perguntas da eleição possuam as opções padrão ('Branco' e 'Nulo').
+        """
+        if getattr(self, 'pk', None):
+            for question in self.questions.all():
+                question.ensure_default_ballot_options()
+

@@ -59,6 +59,9 @@ class StartElectionView(APIView):
             election.start_datetime = timezone.now()
             election.save()
 
+            # Garante a presença das opções 'Branco' e 'Nulo' em todas as perguntas da eleição
+            election.ensure_default_ballot_options()
+
             # 4. Gera token único e envia link de votação por e-mail para cada eleitor
             emails_sent = 0
             for voter in election.electoral_college.all():
