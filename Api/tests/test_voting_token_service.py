@@ -242,30 +242,40 @@ class VotingQRCodeViewTestCase(TestCase):
 
 
 
-    def test_secure_qr_code_encryption_and_decryption(self):
+    def test_signed_qr_code_generation_and_verification(self):
         import base64
         import json
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
 
-        link = VotingTokenService.build_secure_qr_link("MeuTokenSeguro123", "eleicao-teste")
-        self.assertTrue(link.startswith("votaai://votar/?data="))
-        b64_payload = link.replace("votaai://votar/?data=", "")
+        code = VotingTokenService.build_secure_qr_link("MeuTokenSeguro123", "eleicao-teste")
+        self.assertTrue(code.startswith("votaai-qr:v2:"))
 
-        # Simula a decifragem do Mobile com a chave simétrica
-        key = base64.b64decode('ia7h7dDz0y2V/7aqy49m5pRg6XRrTDKvUqXGQnZXa1o=')
-        blob = base64.b64decode(b64_payload)
-        iv = blob[:12]
-        ct = blob[12:]
-        aesgcm = AESGCM(key)
-        decrypted_bytes = aesgcm.decrypt(iv, ct, None)
-        payload = json.loads(decrypted_bytes.decode('utf-8'))
+        body = code[len("votaai-qr:v2:"):]
+        self.assertIn(".", body)
+        payload_b64, sig_b64 = body.split(".", 1)
 
+        # Decodifica payload JSON
+        def pad_b64(s):
+            return s + "=" * ((4 - len(s) % 4) % 4)
+
+        payload_bytes = base64.urlsafe_b64decode(pad_b64(payload_b64))
+        payload = json.loads(payload_bytes.decode('utf-8'))
         self.assertEqual(payload['token'], "MeuTokenSeguro123")
         self.assertEqual(payload['election_id'], "eleicao-teste")
-        self.assertIn('ts', payload)
+        self.assertIn('iat', payload)
+        self.assertIn('exp', payload)
 
-    def test_voting_qrcode_view_renders_encrypted_qr_code(self):
+        # Valida a assinatura ECDSA P-256 com a chave pública oficial embutida no Mobile
+        public_key_b64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELCNngOqmiTYGoPVhe91LA7bzpC15IbLmODVPGW093r5DRzcvVAkyaTOurA9/K16Mv20SespIJ851Fw8wkzHVtw=="
+        public_key = serialization.load_der_public_key(base64.b64decode(public_key_b64))
+
+        sig_der = base64.urlsafe_b64decode(pad_b64(sig_b64))
+        # Deve verificar sem lançar exceção
+        public_key.verify(sig_der, payload_b64.encode('ascii'), ec.ECDSA(hashes.SHA256()))
+
+    def test_voting_qrcode_view_renders_signed_qr_code(self):
         response = self.client.get(f'/votar/?token={self.raw_unused_token}')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode('utf-8')
-        self.assertIn('votaai://votar/?data', content)
+        self.assertTrue('votaai-qr:v2:' in content or 'votaai\\u002Dqr:v2:' in content)

@@ -35,39 +35,66 @@ class VotingTokenService:
             return f"{mobile_url}&token={raw_token}"
         return f"{mobile_url}?token={raw_token}"
 
-    @classmethod
-    def encrypt_qr_payload(cls, data: dict, key_b64: str = None) -> str:
-        """
-        Encrypts voting data using AES-256-GCM authenticated encryption (AEAD).
-        Returns a base64 encoded string of [12 bytes IV] + [Ciphertext] + [16 bytes Tag].
-        """
+    @staticmethod
+    def _b64url(data: bytes) -> str:
+        """Codifica bytes em Base64 URL-safe sem padding, conforme especificação do QR v2."""
         import base64
-        import json
-        import os
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        key_str = key_b64 or getattr(settings, 'QR_CODE_SECRET_KEY', 'ia7h7dDz0y2V/7aqy49m5pRg6XRrTDKvUqXGQnZXa1o=')
-        key = base64.b64decode(key_str.strip())
-        aesgcm = AESGCM(key)
-        iv = os.urandom(12)
-        payload_bytes = json.dumps(data, separators=(',', ':')).encode('utf-8')
-        ct_with_tag = aesgcm.encrypt(iv, payload_bytes, None)
-        full_blob = iv + ct_with_tag
-        return base64.b64encode(full_blob).decode('ascii')
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
     @classmethod
-    def build_secure_qr_link(cls, raw_token: str, election_id: str = '') -> str:
+    def get_qr_signing_private_key_pem(cls) -> bytes:
         """
-        Builds the secure encrypted mobile QR Code deep link: votaai://votar/?data=<b64>
+        Retorna os bytes PEM da chave privada ECDSA P-256 de assinatura de QR Codes.
+        Carrega de settings.QR_SIGNING_PRIVATE_KEY ou variável de ambiente.
         """
+        raw_key = getattr(settings, 'QR_SIGNING_PRIVATE_KEY', None)
+        if not raw_key:
+            raise ValueError("QR_SIGNING_PRIVATE_KEY não configurada no settings/ambiente.")
+        if isinstance(raw_key, bytes):
+            return raw_key
+        return raw_key.replace('\\n', '\n').encode('utf-8')
+
+    @classmethod
+    def build_signed_qr(cls, raw_token: str, election_id: str = '', ttl_seconds: int = 180, private_key_pem: bytes = None) -> str:
+        """
+        Gera o conteúdo oficial do QR Code assinado com ECDSA P-256 e SHA-256 (DER).
+        Formato: votaai-qr:v2:<payload_b64url>.<assinatura_b64url>
+
+        - O payload é um JSON UTF-8 em Base64 URL-safe sem padding com token, election_id, iat e exp opcional.
+        - A assinatura é calculada sobre os bytes ASCII da string payload_b64url.
+        - O aplicativo mobile possui apenas a chave pública, garantindo a autenticidade da eleição.
+        """
+        import json
         import time
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        now = int(time.time())
         payload = {
             'token': raw_token.strip(),
             'election_id': str(election_id) if election_id else '',
-            'ts': int(time.time() * 1000)
+            'iat': now,
         }
-        b64 = cls.encrypt_qr_payload(payload)
-        return f"votaai://votar/?data={b64}"
+        if ttl_seconds:
+            payload['exp'] = now + ttl_seconds
+
+        payload_json = json.dumps(payload, separators=(',', ':'), ensure_ascii=False)
+        payload_b64 = cls._b64url(payload_json.encode('utf-8'))
+
+        pem_data = private_key_pem or cls.get_qr_signing_private_key_pem()
+        private_key = serialization.load_pem_private_key(pem_data, password=None)
+        der_signature = private_key.sign(payload_b64.encode('ascii'), ec.ECDSA(hashes.SHA256()))
+        sig_b64 = cls._b64url(der_signature)
+
+        return f"votaai-qr:v2:{payload_b64}.{sig_b64}"
+
+    @classmethod
+    def build_secure_qr_link(cls, raw_token: str, election_id: str = '', ttl_seconds: int = 180) -> str:
+        """
+        Ponto de entrada para obtenção do conteúdo do QR Code de votação.
+        Gera o código no formato oficial assinado assimetricamente (votaai-qr:v2:...).
+        """
+        return cls.build_signed_qr(raw_token, election_id, ttl_seconds=ttl_seconds)
 
     @classmethod
     def build_web_voting_link(cls, raw_token: str) -> str:

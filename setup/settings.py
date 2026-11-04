@@ -194,8 +194,13 @@ ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/e
 # Suporta prefixo com query param (ex: votaai://votar/?token=), path com barra ou template {token}
 MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')
 
-# Chave simétrica AES-256 (32 bytes em Base64) para blindagem criptográfica e autenticação AEAD dos QR Codes
-QR_CODE_SECRET_KEY = config('QR_CODE_SECRET_KEY', default='ia7h7dDz0y2V/7aqy49m5pRg6XRrTDKvUqXGQnZXa1o=')
+# Chave privada assimétrica ECDSA P-256 (PEM) para assinatura dos QR Codes (formato votaai-qr:v2)
+# O app mobile possui apenas a chave pública embutida, impedindo falsificação mesmo com extração do APK.
+QR_SIGNING_PRIVATE_KEY = config('QR_SIGNING_PRIVATE_KEY', default="""-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIAhpqS3Kvy7qjmYN2R+T/V0PpiOBRlIyi2EF9VNKP43RoAoGCCqGSM49
+AwEHoUQDQgAELCNngOqmiTYGoPVhe91LA7bzpC15IbLmODVPGW093r5DRzcvVAky
+aTOurA9/K16Mv20SespIJ851Fw8wkzHVtw==
+-----END EC PRIVATE KEY-----""")
 
 # Link / URL web para exibição segura do QR Code (validação direta na View com ?token=)
 WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/?token=')
