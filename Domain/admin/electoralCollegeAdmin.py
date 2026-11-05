@@ -6,16 +6,16 @@ from Domain.models.schemas.election.electoralCollegeSchema import ElectoralColle
 class ElectoralCollegeInline(admin.TabularInline):
     model = ElectoralCollege
     extra = 0
-    fields = ('full_name', 'email', 'nickname', 'has_voted', 'email_sent', 'email_sent_at')
-    readonly_fields = ('has_voted', 'email_sent', 'email_sent_at')
+    fields = ('full_name', 'email', 'nickname', 'has_voted', 'email_sent')
+    readonly_fields = ('has_voted', 'email_sent')
 
 
 @admin.register(ElectoralCollege)
 class ElectoralCollegeAdmin(admin.ModelAdmin):
-    list_display = ('id', 'election', 'full_name', 'email', 'nickname', 'has_voted', 'email_sent', 'email_sent_at')
+    list_display = ('id', 'election', 'full_name', 'email', 'nickname', 'has_voted', 'email_sent')
     list_filter = ('election', 'has_voted', 'email_sent')
     search_fields = ('full_name', 'email', 'nickname')
-    readonly_fields = ('email_sent_at',)
+    readonly_fields = ('has_voted', 'email_sent')
     actions = ['resend_voting_email']
 
     @admin.action(description=_('Reenviar e-mail de votação com novo token'))

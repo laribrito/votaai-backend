@@ -44,10 +44,8 @@ class ElectoralCollegeProxy:
 
     def mark_email_sent(self) -> None:
         """Marks that the voting invitation email was successfully sent to this voter."""
-        from django.utils import timezone
         self.email_sent = True
-        self.email_sent_at = timezone.now()
-        self.save(update_fields=['email_sent', 'email_sent_at'])
+        self.save(update_fields=['email_sent'])
 
     def clean(self):
         super().clean()
