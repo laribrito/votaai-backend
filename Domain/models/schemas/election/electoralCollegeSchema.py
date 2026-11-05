@@ -1,9 +1,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from Core.schemaMixins.timestampSchemaMixin import TimestampSchemaMixin
 from Domain.models.proxies.election.electoralCollegeProxy import ElectoralCollegeProxy
 
-class ElectoralCollege(ElectoralCollegeProxy, TimestampSchemaMixin):
+class ElectoralCollege(ElectoralCollegeProxy, models.Model):
     """
     Domain Model: Electoral College (Voter for an Election).
     Represents an eligible voter in a specific election,
@@ -52,12 +51,6 @@ class ElectoralCollege(ElectoralCollegeProxy, TimestampSchemaMixin):
         _('email sent'),
         default=False,
         help_text=_('Indicates whether the voting email has been sent to this voter')
-    )
-    email_sent_at = models.DateTimeField(
-        _('email sent at'),
-        null=True,
-        blank=True,
-        help_text=_('Timestamp of the last email sent to this voter')
     )
     election = models.ForeignKey(
         'Domain.Election',
