@@ -33,7 +33,10 @@ class AvailableElectionsView(APIView):
             if not user:
                 machine_key = getattr(request, '_machine_public_key', None)
                 if machine_key:
-                    user = User.objects.filter(machine_public_key=str(machine_key).strip()).first()
+                    norm_key = SECryptoService.to_pem_public_key(machine_key)
+                    user = User.objects.filter(machine_public_key=norm_key).first()
+                    if not user:
+                        user = User.objects.filter(machine_public_key=str(machine_key).strip()).first()
 
             # Retorna vazio se não houver usuário vinculado a esta máquina
             if not user:

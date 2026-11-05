@@ -11,7 +11,7 @@ class Vote(VoteProxy, TimestampSchemaMixin):
     class Meta:
         verbose_name = _('Vote')
         verbose_name_plural = _('Votes')
-        ordering = ['-created_at']
+        ordering = ['?']  # Reordenação aleatória padrão (Mixnet / Anti-Timing)
 
     id_generated = models.CharField(
         _('generated ID'),

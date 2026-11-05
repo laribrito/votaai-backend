@@ -338,6 +338,28 @@ class SECryptoService:
                 ncrypt.NCryptFreeObject(hProv)
 
     @classmethod
+    def to_pem_public_key(cls, key_data: str | bytes) -> str:
+        """
+        Converte qualquer chave pública RSA (PEM, DER, Microsoft CNG BCRYPT_RSAKEY_BLOB)
+        para o formato padrão internacional X.509 PEM.
+        Retorna a string PEM sanitizada. Se falhar, retorna o valor original limpo.
+        """
+        if not key_data:
+            return ""
+        if isinstance(key_data, str):
+            clean = key_data.strip()
+            if clean.startswith('-----BEGIN PUBLIC KEY-----') and clean.endswith('-----END PUBLIC KEY-----'):
+                return clean.replace('\r\n', '\n')
+        try:
+            key_obj = cls.load_rsa_public_key(key_data)
+            return key_obj.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8').strip().replace('\r\n', '\n')
+        except Exception:
+            return str(key_data).strip()
+
+    @classmethod
     def load_rsa_public_key(cls, key_data: str | bytes):
         """
         Carrega chave pública RSA suportando PEM, DER (Base64) e BCRYPT_RSAKEY_BLOB (CNG).

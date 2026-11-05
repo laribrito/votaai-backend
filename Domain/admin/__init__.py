@@ -5,6 +5,7 @@ from .optionAdmin import OptionAdmin
 from .electoralCollegeAdmin import ElectoralCollegeAdmin
 from .voteAdmin import VoteAdmin
 from .tallyAdmin import TallyAdmin
+from .ballotTicketAdmin import BallotTicketAdmin
 
 __all__ = [
     'UserAdmin',
@@ -14,4 +15,5 @@ __all__ = [
     'ElectoralCollegeAdmin',
     'VoteAdmin',
     'TallyAdmin',
+    'BallotTicketAdmin',
 ]

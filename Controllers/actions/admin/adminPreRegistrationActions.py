@@ -53,8 +53,8 @@ class AdminPreRegistrationActions:
         except Exception as e:
             raise ValidationError({"machine_public_key": _("Invalid machine public key: %(error)s") % {'error': str(e)}})
 
-        # Normaliza chave pública para evitar incompatibilidades de quebra de linha CRLF vs LF
-        machine_public_key = machine_public_key.strip().replace('\r\n', '\n')
+        # Normaliza chave pública para o formato padrão X.509 PEM
+        machine_public_key = SECryptoService.to_pem_public_key(machine_public_key)
 
         if not device_id:
             raise ValidationError({"device_id": _("Device ID is required.")})

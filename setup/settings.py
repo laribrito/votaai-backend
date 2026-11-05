@@ -193,3 +193,108 @@ ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/e
 # Link / Deep Link de votação para aplicativo mobile (desacoplado; padrão: votaai://votar/?token=)
 # Suporta prefixo com query param (ex: votaai://votar/?token=), path com barra ou template {token}
 MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')
+
+# Chave privada assimétrica ECDSA P-256 (PEM) para assinatura dos QR Codes (formato votaai-qr:v2)
+# O app mobile possui apenas a chave pública embutida, impedindo falsificação mesmo com extração do APK.
+QR_SIGNING_PRIVATE_KEY = config('QR_SIGNING_PRIVATE_KEY', default="""-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIAhpqS3Kvy7qjmYN2R+T/V0PpiOBRlIyi2EF9VNKP43RoAoGCCqGSM49
+AwEHoUQDQgAELCNngOqmiTYGoPVhe91LA7bzpC15IbLmODVPGW093r5DRzcvVAky
+aTOurA9/K16Mv20SespIJ851Fw8wkzHVtw==
+-----END EC PRIVATE KEY-----""")
+
+# Link / URL web para exibição segura do QR Code (validação direta na View com ?token=)
+WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/?token=')
+
+# Limite máximo de tentativas inválidas de solicitação de voto antes do bloqueio
+VOTING_TOKEN_MAX_FAILED_ATTEMPTS = config('VOTING_TOKEN_MAX_FAILED_ATTEMPTS', default=3, cast=int)
+
+# Exigência estrita de atestação de hardware Android KeyStore (TEE / StrongBox)
+# Em produção deve ser True. Pode ser False em desenvolvimento/testes locais.
+REQUIRE_HARDWARE_ATTESTATION = config('REQUIRE_HARDWARE_ATTESTATION', default=True, cast=bool)
+
+# ==============================================================================
+# AUDITORIA E LOGGING DO SISTEMA
+# ==============================================================================
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_LEVEL = config('LOG_LEVEL', default='INFO')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'audit': {
+            'format': '[{asctime}] [{levelname}] [{name}] ({module}.{funcName}:{lineno}): {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '[{levelname}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'audit',
+            'level': LOG_LEVEL,
+        },
+        'audit_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'audit.log'),
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB por arquivo
+            'backupCount': 10,             # Mantém até 10 backups rotacionados
+            'formatter': 'audit',
+            'encoding': 'utf-8',
+            'level': LOG_LEVEL,
+        },
+    },
+    'root': {
+        'handlers': ['console', 'audit_file'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Api': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Controllers': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Domain': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Infrastructure': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'Core': {
+            'handlers': ['console', 'audit_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}
+

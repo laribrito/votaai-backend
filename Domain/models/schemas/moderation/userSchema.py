@@ -58,3 +58,12 @@ class User(UserProxy, AbstractUser, TimestampSchemaMixin):
         null=True,
         help_text=_('Base32 secret for two-factor authentication (TOTP)')
     )
+
+    def save(self, *args, **kwargs):
+        if self.machine_public_key:
+            try:
+                from Infrastructure.services.seCryptoService import SECryptoService
+                self.machine_public_key = SECryptoService.to_pem_public_key(self.machine_public_key)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)

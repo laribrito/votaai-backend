@@ -4,6 +4,7 @@ from .optionSchema import Option
 from .electoralCollegeSchema import ElectoralCollege
 from .voteSchema import Vote
 from .tallySchema import Tally
+from .ballotTicketSchema import BallotTicket
 
 __all__ = [
     'Election',
@@ -13,4 +14,5 @@ __all__ = [
     'ElectoralCollege',
     'Vote',
     'Tally',
+    'BallotTicket',
 ]

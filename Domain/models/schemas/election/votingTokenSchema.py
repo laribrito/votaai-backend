@@ -52,3 +52,53 @@ class VotingToken(VotingTokenProxy, TimestampSchemaMixin):
         blank=True,
         help_text=_('IP address from which the token was consumed (forensic log).')
     )
+    machine_public_key = models.TextField(
+        _('machine public key'),
+        blank=True,
+        default='',
+        help_text=_('Hardware-backed public key of the machine/device that requested this ballot.')
+    )
+    nonce = models.CharField(
+        _('nonce'),
+        max_length=255,
+        blank=True,
+        default='',
+        help_text=_('Latest nonce used for this voting token (anti-replay).')
+    )
+    failed_attempts = models.PositiveIntegerField(
+        _('failed attempts'),
+        default=0,
+        help_text=_('Count of consecutive invalid access attempts.')
+    )
+    is_blocked = models.BooleanField(
+        _('is blocked'),
+        default=False,
+        help_text=_('Indicates whether this token has been blocked due to excessive invalid attempts.')
+    )
+    blocked_at = models.DateTimeField(
+        _('blocked at'),
+        null=True,
+        blank=True,
+        help_text=_('Timestamp when this token was blocked.')
+    )
+    last_attempt_at = models.DateTimeField(
+        _('last attempt at'),
+        null=True,
+        blank=True,
+        help_text=_('Timestamp of the most recent access attempt.')
+    )
+    last_attempt_ip = models.GenericIPAddressField(
+        _('last attempt IP'),
+        null=True,
+        blank=True,
+        help_text=_('IP address of the most recent access attempt.')
+    )
+
+    def save(self, *args, **kwargs):
+        if self.machine_public_key:
+            try:
+                from Infrastructure.services.seCryptoService import SECryptoService
+                self.machine_public_key = SECryptoService.to_pem_public_key(self.machine_public_key)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)

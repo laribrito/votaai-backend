@@ -24,6 +24,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/redoc',
         '/static',
         '/media',
+        '/votar',
     )
 
     # Prefixos de rotas para Desktop usando a chave 1
@@ -42,8 +43,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
 
     # Prefixos de rotas para Mobile usando a chave 2
     MOBILE_ROUTES = (
-        '/api/vote',               # solicitação de voto e votar
-        '/api/election/track',     # acompanhar eleição
+        '/api/vote/request',       # 1. Solicitação de cédula (recebe public key, retorna cédula da eleição)
+        '/api/vote/cast',          # 2. Envio da cédula preenchida (deposita o voto cifrado e emite comprovante)
+        '/api/election/track',     # Acompanhar eleição
     )
 
     def process_request(self, request):
@@ -116,7 +118,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 # 3. Extrai machine_public_key obrigatoriamente de DENTRO do payload descriptografado
                 machine_public_key_pem = decrypted_payload.get('machine_public_key')
                 if machine_public_key_pem:
-                    request._machine_public_key = machine_public_key_pem
+                    request._machine_public_key = SECryptoService.to_pem_public_key(machine_public_key_pem)
 
                 # 4. Extrai e preserva qualquer nonce enviado no envelope externo ou no payload
                 nonce_value = None
@@ -206,6 +208,8 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 client_pub_key = None
 
             if not client_pub_key:
+                if response.status_code >= 400:
+                    return response
                 return JsonResponse({
                     'error': f'Chave pública da máquina ({device_type}) não encontrada. Envie sua chave pública no campo "machine_public_key".'
                 }, status=400)
