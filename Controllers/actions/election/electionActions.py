@@ -248,11 +248,11 @@ class ElectionActions:
     @classmethod
     def buscarEleicoesAbertas(cls, search_term: str | None = None):
         """
-        Retorna as eleições públicas que estão abertas (status = STARTED),
-        com os dados necessários e contagem de eleitores/votos anotada para quórum.
-        Suporta busca por título.
+        Retorna as eleições públicas para acompanhamento a partir do status de iniciada
+        (STARTED, CLOSED, TALLIED), excluindo rascunhos ainda não iniciados (CREATED).
+        Contém contagem anotada de eleitores/votos para quórum e suporta busca por título.
         """
-        qs = Election.objects.filter(status=ElectionStatus.STARTED).annotate(
+        qs = Election.objects.exclude(status=ElectionStatus.CREATED).annotate(
             total_voters=Count('electoral_college', distinct=True),
             voted_count=Count('electoral_college', filter=Q(electoral_college__has_voted=True), distinct=True)
         ).order_by('-start_datetime', '-created_at')
@@ -304,10 +304,15 @@ class ElectionActions:
                 Q(email__icontains=search_str)
             )
 
+        is_closed = election.status in (ElectionStatus.CLOSED, ElectionStatus.TALLIED)
         voters_data = [
             {
                 "id": voter.id,
-                "full_name": voter.full_name,
+                "full_name": (
+                    f"{voter.full_name} (Ausente)".strip()
+                    if (not voter.has_voted and is_closed and not (voter.full_name or '').endswith("(Ausente)"))
+                    else voter.full_name
+                ),
                 "nickname": voter.nickname,
                 "email": voter.email,
                 "has_voted": voter.has_voted
@@ -320,6 +325,7 @@ class ElectionActions:
             "title": election.title,
             "status": election.status,
             "start_datetime": election.start_datetime,
+            "end_datetime": election.end_datetime,
             "total_voters": total_voters,
             "voted_count": voted_count,
             "pending_count": pending_count,

@@ -15,21 +15,21 @@ from Api.serializers.election.publicElectionSerializer import (
 
 @extend_schema_view(
     list=extend_schema(
-        summary="Buscar eleições em aberto (Público)",
-        description="Retorna a lista de eleições abertas (STARTED) para acompanhamento público, contendo apenas os dados essenciais e métricas de quórum.",
+        summary="Listar eleições para acompanhamento (Público)",
+        description="Retorna a lista de todas as eleições públicas a partir do status de iniciada (STARTED, CLOSED, TALLIED) para acompanhamento público, contendo dados essenciais, datas de início e finalização e métricas de quórum.",
         tags=["Eleições - Público"],
         parameters=[
             OpenApiParameter(
                 name="search",
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
-                description="Filtrar eleições abertas por título (busca textual)."
+                description="Filtrar eleições por título (busca textual)."
             ),
             OpenApiParameter(
                 name="title",
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
-                description="Filtrar eleições abertas por título."
+                description="Filtrar eleições por título."
             ),
         ],
         responses={200: PublicElectionListSerializer(many=True)},
@@ -63,7 +63,7 @@ from Api.serializers.election.publicElectionSerializer import (
 class PublicElectionViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet pública para consulta e acompanhamento de eleições pelo público em geral.
-    - list: Busca de eleições em aberto (status STARTED) com dados necessários.
+    - list: Listagem de todas as eleições a partir do status de iniciada (STARTED, CLOSED, TALLIED).
     - retrieve: Acompanhamento de uma eleição via retrieve, retornando colegiado eleitoral e quem votou.
     """
     permission_classes = [AllowAny]

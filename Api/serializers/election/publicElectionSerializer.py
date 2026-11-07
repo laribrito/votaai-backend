@@ -9,17 +9,31 @@ class PublicElectoralCollegeVoterSerializer(serializers.ModelSerializer):
     Serializador público de eleitor no colegiado eleitoral.
     Retorna apenas os dados necessários para identificação e acompanhamento do quórum:
     id, full_name, nickname, email e se já votou (has_voted).
+    Para eleições finalizadas (CLOSED ou TALLIED), indica '(Ausente)' no nome de quem não votou.
     Nunca expõe senhas ou credenciais de votação.
     """
+    full_name = serializers.SerializerMethodField(
+        help_text="Nome do eleitor, exibindo '(Ausente)' caso a eleição tenha sido encerrada e ele não tenha votado"
+    )
+
     class Meta:
         model = ElectoralCollege
         fields = ['id', 'full_name', 'nickname', 'email', 'has_voted']
         read_only_fields = fields
 
+    def get_full_name(self, obj) -> str:
+        name = obj.full_name or ""
+        election = self.context.get('election') or getattr(obj, 'election', None)
+        if not obj.has_voted and election:
+            status = getattr(election, 'status', None)
+            if status in ('CLOSED', 'TALLIED') and not name.endswith("(Ausente)"):
+                return f"{name} (Ausente)".strip()
+        return name
+
 
 class PublicElectionListSerializer(serializers.ModelSerializer):
     """
-    Serializador para busca e listagem pública de eleições em aberto.
+    Serializador para busca e listagem pública de eleições em aberto ou encerradas.
     Retorna apenas os metadados necessários e resumo do quórum.
     """
     total_voters = serializers.SerializerMethodField(help_text="Total de eleitores aptos no colegiado eleitoral")
@@ -33,6 +47,7 @@ class PublicElectionListSerializer(serializers.ModelSerializer):
             'title',
             'status',
             'start_datetime',
+            'end_datetime',
             'total_voters',
             'voted_count',
             'quorum_percentage',
@@ -75,6 +90,7 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
             'title',
             'status',
             'start_datetime',
+            'end_datetime',
             'total_voters',
             'voted_count',
             'pending_count',
@@ -126,4 +142,6 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
                     Q(email__icontains=search_str)
                 )
 
-        return PublicElectoralCollegeVoterSerializer(voters_qs, many=True).data
+        voter_context = dict(self.context)
+        voter_context['election'] = obj
+        return PublicElectoralCollegeVoterSerializer(voters_qs, many=True, context=voter_context).data
