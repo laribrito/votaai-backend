@@ -5,7 +5,8 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q
 from django.contrib.auth.hashers import make_password
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from cryptography.hazmat.primitives import serialization
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
@@ -247,11 +248,11 @@ class ElectionActions:
     @classmethod
     def buscarEleicoesAbertas(cls, search_term: str | None = None):
         """
-        Retorna as eleições públicas que estão abertas (status = STARTED),
-        com os dados necessários e contagem de eleitores/votos anotada para quórum.
-        Suporta busca por título.
+        Retorna as eleições públicas para acompanhamento a partir do status de iniciada
+        (STARTED, CLOSED, TALLIED), excluindo rascunhos ainda não iniciados (CREATED).
+        Contém contagem anotada de eleitores/votos para quórum e suporta busca por título.
         """
-        qs = Election.objects.filter(status=ElectionStatus.STARTED).annotate(
+        qs = Election.objects.exclude(status=ElectionStatus.CREATED).annotate(
             total_voters=Count('electoral_college', distinct=True),
             voted_count=Count('electoral_college', filter=Q(electoral_college__has_voted=True), distinct=True)
         ).order_by('-start_datetime', '-created_at')
@@ -303,10 +304,15 @@ class ElectionActions:
                 Q(email__icontains=search_str)
             )
 
+        is_closed = election.status in (ElectionStatus.CLOSED, ElectionStatus.TALLIED)
         voters_data = [
             {
                 "id": voter.id,
-                "full_name": voter.full_name,
+                "full_name": (
+                    f"{voter.full_name} (Ausente)".strip()
+                    if (not voter.has_voted and is_closed and not (voter.full_name or '').endswith("(Ausente)"))
+                    else voter.full_name
+                ),
                 "nickname": voter.nickname,
                 "email": voter.email,
                 "has_voted": voter.has_voted
@@ -319,9 +325,118 @@ class ElectionActions:
             "title": election.title,
             "status": election.status,
             "start_datetime": election.start_datetime,
+            "end_datetime": election.end_datetime,
             "total_voters": total_voters,
             "voted_count": voted_count,
             "pending_count": pending_count,
             "quorum_percentage": quorum_percentage,
             "electoral_college": voters_data
         }
+
+    @classmethod
+    def fecharEleicao(
+        cls,
+        data: dict,
+        user: User | None = None,
+        machine_public_key: str | None = None
+    ) -> dict:
+        """
+        Encerra o período de votação de uma eleição ativa (STARTED).
+        - Valida que a eleição existe e está no status STARTED.
+        - Autentica a máquina/administrador criador da eleição.
+        - Valida a assinatura digital específica da eleição gerada com a chave privada de hardware (key_handle).
+        - Realiza a transição atômica de status para CLOSED e registra end_datetime.
+        - Retorna métricas finais do quórum travado e o nonce de volta para a máquina cliente.
+        """
+        key_handle = data.get("keyHandle") or data.get("key_handle")
+        election_signature = data.get("election_signature")
+        nonce_client = (
+            data.get("nonceClient3")
+            or data.get("nonceClient")
+            or data.get("nonceClient2")
+            or data.get("nonce")
+        )
+
+        if not key_handle:
+            raise ValidationError({"keyHandle": _("The election key handle is required.")})
+
+        if not election_signature:
+            raise ValidationError({"election_signature": _("Election signature is missing.")})
+
+        # 1. Localiza a eleição pelo key_handle
+        election = Election.objects.filter(key_handle=key_handle).order_by('-created_at').first()
+        if not election:
+            raise Election.DoesNotExist(_("Election not found."))
+
+        # 2. Valida o status da eleição
+        if election.status == ElectionStatus.CLOSED:
+            raise ValidationError({"election": _("This election has already been closed.")})
+        if election.status == ElectionStatus.TALLIED:
+            raise ValidationError({"election": _("This election has already been tallied.")})
+        if election.status == ElectionStatus.CREATED:
+            raise ValidationError({"election": _("Cannot close an election that has not been started yet.")})
+        if election.status != ElectionStatus.STARTED:
+            raise ValidationError({"election": _("This election is not in an active voting state.")})
+
+        # 3. Valida a permissão da máquina / administrador criador
+        norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
+        creator = election.created_by
+        if creator:
+            if user and user.id != creator.id:
+                raise PermissionDenied(_("Only the administrator that created this election can close it."))
+            if norm_machine_key and creator.machine_public_key:
+                norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+                if norm_machine_key.strip() != norm_creator_key.strip():
+                    raise PermissionDenied(_("Only the physical machine that created this election can close it."))
+
+        # 4. Valida a assinatura digital específica da eleição (usando a public_key da eleição)
+        payload_to_verify = dict(data)
+        payload_to_verify.pop("election_signature", None)
+        payload_to_verify.pop("signature", None)
+        payload_to_verify.pop("machine_public_key", None)
+
+        payload_bytes = json.dumps(
+            payload_to_verify,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+
+        if not SECryptoService.verify_signature(election.public_key, payload_bytes, election_signature):
+            raise PermissionDenied(_("Invalid election signature. Possible spoofing attempt."))
+
+        # 5. Transição de estado atômica para CLOSED
+        with transaction.atomic():
+            election.status = ElectionStatus.CLOSED
+            election.end_datetime = timezone.now()
+            election.save(update_fields=['status', 'end_datetime', 'updated_at'])
+
+        # 6. Cálculo das métricas de quórum congelado
+        total_voters = election.electoral_college.count()
+        voted_count = election.electoral_college.filter(has_voted=True).count()
+        pending_count = max(0, total_voters - voted_count)
+        quorum_percentage = round((voted_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        result = {
+            "keyHandle": election.key_handle,
+            "titulo": election.title,
+            "status": election.status,
+            "hora_registrada": election.end_datetime.isoformat(),
+            "total_colegio": total_voters,
+            "votos_registrados": voted_count,
+            "pendentes": pending_count,
+            "porcentagem_quorum": quorum_percentage,
+            "mensagem": str(_("Election closed successfully. Voter quorum is locked."))
+        }
+
+        # Ecoa os nonces para proteção contra replay
+        if data.get("nonceClient3"):
+            result["nonceClient3"] = data.get("nonceClient3")
+        if data.get("nonceClient"):
+            result["nonceClient"] = data.get("nonceClient")
+        if data.get("nonceClient2"):
+            result["nonceClient2"] = data.get("nonceClient2")
+        if nonce_client and not any(k in result for k in ("nonceClient3", "nonceClient", "nonceClient2")):
+            result["nonceClient"] = nonce_client
+
+        return result

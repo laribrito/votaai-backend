@@ -45,12 +45,16 @@ class AvailableElectionsView(APIView):
                     "elections": []
                 }, status=status.HTTP_200_OK)
 
-            # 2. Busca eleições criadas e ainda não iniciadas daquela máquina/pessoa
-            available_elections = Election.objects.filter(
-                status=ElectionStatus.CREATED,
-                start_datetime__isnull=True,
-                created_by=user
-            ).order_by('-created_at')
+            # 2. Busca eleições daquela máquina/pessoa (status configurável, default CREATED)
+            target_status = decrypted_payload.get("status") or ElectionStatus.CREATED
+            filter_kwargs = {
+                "status": target_status,
+                "created_by": user
+            }
+            if target_status == ElectionStatus.CREATED:
+                filter_kwargs["start_datetime__isnull"] = True
+
+            available_elections = Election.objects.filter(**filter_kwargs).order_by('-created_at')
 
             elections_data = [
                 {

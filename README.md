@@ -17,6 +17,11 @@ O sistema implementa criptografia de ponta a ponta (E2EE), integração com mód
 - `POST /api/election/create/` — Cadastra uma nova eleição com cédula, perguntas, opções e colégio eleitoral
 - `POST /api/election/available/` — Lista as eleições criadas e disponíveis para serem iniciadas pela máquina vinculada
 - `POST /api/election/start/` — Inicia a eleição, valida a chave criptográfica e despacha tokens únicos de votação por e-mail
+- `POST /api/election/close/` — Encerra o período de votação de uma eleição ativa (STARTED), congelando o quórum de votantes e bloqueando novos votos mediante assinatura de hardware da eleição e da máquina
+
+### 🌐 Acompanhamento Público e Monitoramento de Quórum (Público / Mobile / Web)
+- `GET /api/election/public/open/` ou `GET /api/public/elections/` — Lista todas as eleições a partir do status de iniciada (`STARTED`, `CLOSED`, `TALLIED`) com dados essenciais, datas (`start_datetime`, `end_datetime`) e métricas de quórum percentual
+- `GET /api/election/track/<int:id>/` ou `GET /api/public/elections/<int:id>/` — Acompanha uma eleição específica, exibindo datas de início e finalização, quórum em tempo real ou congelado (`STARTED` / `CLOSED`), porcentagem de quórum e participantes do colegiado eleitoral (indicando `(Ausente)` para quem não votou quando a eleição for encerrada)
 
 ### 🌐 Cédula Web e Landing Page (Web / QR Code)
 - `GET /votar/` ou `GET /votar/<str:token>/` — Exibe a página com QR Code seguro anti-cache e suporta validação assíncrona (`?check=1`)
@@ -312,7 +317,45 @@ sequenceDiagram
 
 ---
 
-### 8. Cédula Web e Landing Page QR Code (`GET /votar/`, `GET /votar/<token>/`)
+### 8. Fechar Eleição e Congelamento de Quórum (`POST /api/election/close/`)
+
+Valida a chave e a assinatura digital da eleição produzida pelo chip TPM da máquina administradora vinculada, atualiza o status para `CLOSED`, define `end_datetime` e congela imediatamente o quórum de votantes, rejeitando quaisquer novas solicitações ou depósitos de votos.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Desktop as Aplicação Desktop
+    participant MW as SEDecryptMiddleware
+    participant View as CloseElectionView
+    participant Actions as ElectionActions
+    participant DB as Banco de Dados
+    participant TPM as Hardware TPM 2.0 (seCryptoService)
+
+    Desktop->>MW: POST /api/election/close/<br/>(keyHandle, nonceClient3, election_signature, machine_public_key, signature)
+    MW->>TPM: Descriptografa envelope AES com VotaAI_SecureKey_1
+    TPM-->>MW: Chave AES simétrica
+    MW->>MW: Decifra payload AES-GCM e extrai machine_public_key & nonce
+    MW->>View: Payload decodificado em request.data
+    View->>Actions: fecharEleicao(data, user, machine_public_key)
+    Actions->>DB: Busca Election por keyHandle com status STARTED
+    Actions->>Actions: Valida se a máquina física/administrador é o criador da eleição
+    Actions->>TPM: SECryptoService.verify_signature(election.public_key, canonical_payload, election_signature)
+    alt Assinatura inválida ou máquina não autorizada
+        Actions-->>View: 403 Forbidden (Assinatura inválida ou não autorizado)
+        View-->>MW: Resposta HTTP 403
+    else Assinatura válida
+        Actions->>DB: 1. Transição atômica: status = CLOSED, end_datetime = now()
+        Actions->>DB: 2. Calcula métricas finais de quórum (total_colegio, votos_registrados, pendentes)
+        Actions-->>View: 200 OK: {keyHandle, titulo, status: CLOSED, hora_registrada, total_colegio, votos_registrados, pendentes, porcentagem_quorum, nonceClient3}
+        View-->>MW: Resposta HTTP 200
+    end
+    MW->>MW: Criptografa resposta com a machine_public_key do Desktop (AES-GCM híbrido)
+    MW-->>Desktop: Envelope Criptografado com quórum final congelado
+```
+
+---
+
+### 9. Cédula Web e Landing Page QR Code (`GET /votar/`, `GET /votar/<token>/`)
 
 Landing page que renderiza o QR Code com cabeçalhos anti-cache estritos e criptografia simétrica AES-256-GCM para ser escaneado exclusivamente pelo aplicativo mobile VotaAí.
 
@@ -347,7 +390,7 @@ sequenceDiagram
 
 ---
 
-### 9. Solicitar Cédula Eleitoral Mobile (`POST /api/vote/request/`)
+### 10. Solicitar Cédula Eleitoral Mobile (`POST /api/vote/request/`)
 
 O aplicativo móvel solicita a cédula de votação apresentando o token de uso único, nonce anti-replay e a cadeia de certificados do **Android KeyStore**. A API exige comprovação de hardware seguro (**TEE ou StrongBox**) antes de vincular a chave do smartphone ao token e emitir a cédula eleitoral.
 
@@ -388,7 +431,7 @@ sequenceDiagram
 
 ---
 
-### 10. Depositar Cédula Cifrada / Voto Anônimo (`POST /api/vote/cast/`)
+### 11. Depositar Cédula Cifrada / Voto Anônimo (`POST /api/vote/cast/`)
 
 O aplicativo móvel cifra as escolhas do eleitor com a chave pública da eleição e assina digitalmente com o chip de hardware. A API realiza o **Hardware Binding Estrito** (garantindo que o voto parta do mesmo dispositivo que solicitou a cédula), quebra completamente a correlação com a identidade do eleitor, deposita o voto anônimo na urna e emite o comprovante eleitoral.
 
@@ -427,6 +470,35 @@ sequenceDiagram
     View-->>MW: 200 OK
     MW->>MW: Criptografa resposta com a machine_public_key do Mobile
     MW-->>Mobile: Envelope Criptografado com o Comprovante Eleitoral (Recibo)
+```
+
+---
+
+### 12. Acompanhamento Público e Monitoramento de Quórum (`GET /api/election/public/open/`, `GET /api/election/track/<id>/`)
+
+Rotas públicas isentas de criptografia de envelope de hardware, permitindo a cidadãos, auditores e aplicativos móveis/web consultar as eleições em andamento e acompanhar o quórum em tempo real. A rota de acompanhamento evolui conforme o ciclo de vida da eleição: exibe quórum dinâmico enquanto `STARTED` e quórum definitivo congelado com data de término (`end_datetime`) quando `CLOSED`. Para eleições encerradas, eleitores que não compareceram à votação são identificados com `(Ausente)` em seu nome. A data de início (`start_datetime`) e a porcentagem de quórum (`quorum_percentage`) são informadas para todas as eleições. Nunca expõe chaves privadas, senhas ou tokens de eleitores.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Publico as Cidadão / App Mobile / Web
+    participant View as PublicElectionViewSet
+    participant Actions as ElectionActions
+    participant DB as Banco de Dados (Election / ElectoralCollege)
+
+    alt 1. Listagem de Eleições para Acompanhamento (GET /api/election/public/open/?search=...)
+        Publico->>View: GET /api/election/public/open/?search=...
+        View->>Actions: buscarEleicoesAbertas(search_term)
+        Actions->>DB: Filtra eleições a partir de iniciada (STARTED, CLOSED, TALLIED)
+        DB-->>View: QuerySet com total_voters, voted_count, quorum_percentage, start_datetime e end_datetime
+        View-->>Publico: 200 OK: [{id, title, status, start_datetime, end_datetime, total_voters, voted_count, quorum_percentage}]
+    else 2. Acompanhamento e Detalhes do Quórum (GET /api/election/track/<id>/)
+        Publico->>View: GET /api/election/track/<id>/?has_voted=true&search=...
+        View->>DB: Busca Election (exclude status=CREATED) e anota quórum
+        DB-->>View: Dados da Eleição e Colegiado Eleitoral
+        View->>View: Sanitiza eleitores e anexa "(Ausente)" no nome de não votantes se CLOSED
+        View-->>Publico: 200 OK: {id, title, status: STARTED|CLOSED, start_datetime, end_datetime, total_voters, voted_count, pending_count, quorum_percentage, electoral_college: [{id, full_name, email, has_voted}, ...]}
+    end
 ```
 
 ---

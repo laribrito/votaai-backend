@@ -95,33 +95,40 @@ class PublicElectionTests(APITestCase):
             end_datetime=timezone.now() - timedelta(days=1),
             created_by=self.creator
         )
-        ElectoralCollege.objects.create(
+        self.voter_closed_1 = ElectoralCollege.objects.create(
             election=self.election_closed,
             full_name="Fernando Rocha",
             nickname="Fernando",
             email="fernando.rocha@votaai.org",
             has_voted=True
         )
+        self.voter_closed_2 = ElectoralCollege.objects.create(
+            election=self.election_closed,
+            full_name="Luciana Ferreira",
+            nickname="Luciana",
+            email="luciana.ferreira@votaai.org",
+            has_voted=False
+        )
 
     # =========================================================================
-    # Testes da Rota Pública de Busca de Eleições em Aberto (List)
+    # Testes da Rota Pública de Busca de Eleições para Acompanhamento (List)
     # =========================================================================
 
-    def test_list_open_elections_returns_only_started(self):
-        """A listagem pública deve retornar apenas eleições com status STARTED."""
+    def test_list_elections_returns_all_from_started_onwards(self):
+        """A listagem pública deve retornar todas as eleições a partir do status STARTED (STARTED, CLOSED, TALLIED) e excluir rascunhos (CREATED)."""
         url = reverse('public-election-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Deve conter 2 eleições abertas (open_1 e open_2), e não created nem closed
-        self.assertEqual(len(data), 2)
+        # Deve conter 3 eleições (open_1, open_2 e closed), e excluir a criada (CREATED)
+        self.assertEqual(len(data), 3)
         returned_ids = [item['id'] for item in data]
         self.assertIn(self.election_open_1.id, returned_ids)
         self.assertIn(self.election_open_2.id, returned_ids)
+        self.assertIn(self.election_closed.id, returned_ids)
         self.assertNotIn(self.election_created.id, returned_ids)
-        self.assertNotIn(self.election_closed.id, returned_ids)
 
     def test_list_open_elections_alternative_url(self):
         """A rota explícita /api/election/public/open/ deve funcionar identicamente."""
@@ -130,7 +137,7 @@ class PublicElectionTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 3)
 
     def test_list_open_elections_contains_only_necessary_fields(self):
         """A listagem pública deve conter apenas campos necessários e quórum resumido."""
@@ -144,12 +151,12 @@ class PublicElectionTests(APITestCase):
         self.assertEqual(item['title'], "Eleição Diretoria Geral 2026")
         self.assertEqual(item['status'], ElectionStatus.STARTED)
         self.assertIn('start_datetime', item)
+        self.assertIn('end_datetime', item)
         self.assertEqual(item['total_voters'], 3)
         self.assertEqual(item['voted_count'], 2)
         self.assertEqual(item['quorum_percentage'], 66.67)
 
-        # Não deve conter dados sensíveis, pesados ou end_datetime
-        self.assertNotIn('end_datetime', item)
+        # Não deve conter dados sensíveis ou pesados
         self.assertNotIn('public_key', item)
         self.assertNotIn('key_handle', item)
         self.assertNotIn('machine_signature', item)
@@ -190,7 +197,7 @@ class PublicElectionTests(APITestCase):
         self.assertEqual(data['title'], "Eleição Diretoria Geral 2026")
         self.assertEqual(data['status'], ElectionStatus.STARTED)
         self.assertIn('start_datetime', data)
-        self.assertNotIn('end_datetime', data)
+        self.assertIn('end_datetime', data)
         self.assertEqual(data['total_voters'], 3)
         self.assertEqual(data['voted_count'], 2)
         self.assertEqual(data['pending_count'], 1)
@@ -283,15 +290,73 @@ class PublicElectionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retrieve_closed_election_allows_viewing_final_quorum(self):
-        """Eleições encerradas (CLOSED) podem ter seu quórum final visualizado."""
+        """Eleições encerradas (CLOSED) exibem quórum final, data de início, término e ausentes no nome."""
         url = reverse('public-election-detail', args=[self.election_closed.id])
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(data['status'], ElectionStatus.CLOSED)
-        self.assertEqual(data['total_voters'], 1)
+        self.assertIn('start_datetime', data)
+        self.assertIsNotNone(data['start_datetime'])
+        self.assertIn('end_datetime', data)
+        self.assertIsNotNone(data['end_datetime'])
+        self.assertEqual(data['total_voters'], 2)
         self.assertEqual(data['voted_count'], 1)
-        self.assertEqual(data['quorum_percentage'], 100.0)
-        self.assertEqual(len(data['electoral_college']), 1)
-        self.assertTrue(data['electoral_college'][0]['has_voted'])
+        self.assertEqual(data['pending_count'], 1)
+        self.assertEqual(data['quorum_percentage'], 50.0)
+        self.assertEqual(len(data['electoral_college']), 2)
+
+        voters_by_email = {v['email']: v for v in data['electoral_college']}
+        # Quem votou permanece sem alteração no nome
+        self.assertTrue(voters_by_email['fernando.rocha@votaai.org']['has_voted'])
+        self.assertEqual(voters_by_email['fernando.rocha@votaai.org']['full_name'], "Fernando Rocha")
+
+        # Quem não votou exibe '(Ausente)' ao lado do nome em eleição finalizada
+        self.assertFalse(voters_by_email['luciana.ferreira@votaai.org']['has_voted'])
+        self.assertEqual(voters_by_email['luciana.ferreira@votaai.org']['full_name'], "Luciana Ferreira (Ausente)")
+
+    def test_list_elections_includes_closed_election_with_end_datetime_and_quorum(self):
+        """A listagem pública sem filtro de status deve incluir eleições encerradas com end_datetime e quórum."""
+        url = reverse('public-election-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        item = next(e for e in data if e['id'] == self.election_closed.id)
+        self.assertEqual(item['status'], ElectionStatus.CLOSED)
+        self.assertIsNotNone(item['start_datetime'])
+        self.assertIsNotNone(item['end_datetime'])
+        self.assertEqual(item['total_voters'], 2)
+        self.assertEqual(item['voted_count'], 1)
+        self.assertEqual(item['quorum_percentage'], 50.0)
+
+    def test_list_elections_includes_tallied_election(self):
+        """Eleições apuradas (TALLIED) também devem ser listadas diretamente para acompanhamento."""
+        election_tallied = Election.objects.create(
+            title="Eleição Diretoria 2024 (Apurada)",
+            public_key="-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8E...\n-----END PUBLIC KEY-----",
+            key_handle="0x81010005",
+            status=ElectionStatus.TALLIED,
+            start_datetime=timezone.now() - timedelta(days=10),
+            end_datetime=timezone.now() - timedelta(days=9),
+            created_by=self.creator
+        )
+        url = reverse('public-election-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        returned_ids = [item['id'] for item in data]
+        self.assertIn(election_tallied.id, returned_ids)
+
+    def test_obter_acompanhamento_eleicao_controller_action(self):
+        """Verifica se o método da action do controller também formata end_datetime e ausentes."""
+        from Controllers.actions.election.electionActions import ElectionActions
+        res = ElectionActions.obterAcompanhamentoEleicao(self.election_closed.id)
+        self.assertEqual(res['status'], ElectionStatus.CLOSED)
+        self.assertIsNotNone(res['start_datetime'])
+        self.assertIsNotNone(res['end_datetime'])
+        self.assertEqual(res['quorum_percentage'], 50.0)
+        voters_by_email = {v['email']: v for v in res['electoral_college']}
+        self.assertEqual(voters_by_email['luciana.ferreira@votaai.org']['full_name'], "Luciana Ferreira (Ausente)")
+        self.assertEqual(voters_by_email['fernando.rocha@votaai.org']['full_name'], "Fernando Rocha")
