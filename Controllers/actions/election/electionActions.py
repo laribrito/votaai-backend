@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, Q
 from django.contrib.auth.hashers import make_password
 from rest_framework.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -241,4 +242,86 @@ class ElectionActions:
             "questions_count": questions_count,
             "options_count": options_count,
             "signature": server_signature
+        }
+
+    @classmethod
+    def buscarEleicoesAbertas(cls, search_term: str | None = None):
+        """
+        Retorna as eleições públicas que estão abertas (status = STARTED),
+        com os dados necessários e contagem de eleitores/votos anotada para quórum.
+        Suporta busca por título.
+        """
+        qs = Election.objects.filter(status=ElectionStatus.STARTED).annotate(
+            total_voters=Count('electoral_college', distinct=True),
+            voted_count=Count('electoral_college', filter=Q(electoral_college__has_voted=True), distinct=True)
+        ).order_by('-start_datetime', '-created_at')
+
+        if search_term:
+            qs = qs.filter(title__icontains=search_term.strip())
+
+        return qs
+
+    @classmethod
+    def obterAcompanhamentoEleicao(
+        cls,
+        election_id: int,
+        voter_has_voted: bool | None = None,
+        voter_search: str | None = None
+    ) -> dict:
+        """
+        Retorna os dados públicos de acompanhamento de uma eleição específica para o quórum.
+        Eleições com status CREATED não estão abertas e não podem ser visualizadas pelo público.
+        Retorna apenas os dados necessários: metadados essenciais, resumo de quórum e o colegiado
+        eleitoral com o status de votação (has_voted).
+        """
+        election = Election.objects.filter(id=election_id).first()
+        if not election:
+            raise Election.DoesNotExist(_("Election not found."))
+
+        if election.status == ElectionStatus.CREATED:
+            raise ValidationError({
+                "election": _("This election is not open or available for public tracking.")
+            })
+
+        # Resumo geral de quórum
+        total_voters = election.electoral_college.count()
+        voted_count = election.electoral_college.filter(has_voted=True).count()
+        pending_count = total_voters - voted_count
+        quorum_percentage = round((voted_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        # Colegiado eleitoral
+        voters_qs = election.electoral_college.all().order_by('full_name')
+
+        if voter_has_voted is not None:
+            voters_qs = voters_qs.filter(has_voted=voter_has_voted)
+
+        if voter_search:
+            search_str = voter_search.strip()
+            voters_qs = voters_qs.filter(
+                Q(full_name__icontains=search_str) |
+                Q(nickname__icontains=search_str) |
+                Q(email__icontains=search_str)
+            )
+
+        voters_data = [
+            {
+                "id": voter.id,
+                "full_name": voter.full_name,
+                "nickname": voter.nickname,
+                "email": voter.email,
+                "has_voted": voter.has_voted
+            }
+            for voter in voters_qs
+        ]
+
+        return {
+            "id": election.id,
+            "title": election.title,
+            "status": election.status,
+            "start_datetime": election.start_datetime,
+            "total_voters": total_voters,
+            "voted_count": voted_count,
+            "pending_count": pending_count,
+            "quorum_percentage": quorum_percentage,
+            "electoral_college": voters_data
         }
