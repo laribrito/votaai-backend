@@ -22,10 +22,16 @@ from Api.views.vote.voteRequestView import VoteRequestView
 from Api.views.vote.voteCastView import VoteCastView
 
 # ---------------------------------------------------------------------------
+# Public Endpoints (Acompanhamento e Listagem Aberta)
+# ---------------------------------------------------------------------------
+from Api.views.election.publicElectionView import PublicElectionViewSet
+
+# ---------------------------------------------------------------------------
 # Router Registration (ViewSets)
 # ---------------------------------------------------------------------------
 router = DefaultRouter()
 router.register(r'admin/pre-registration', AdminPreRegistrationViewSet, basename='admin-pre-registration')
+router.register(r'public/elections', PublicElectionViewSet, basename='public-election')
 
 # ---------------------------------------------------------------------------
 # URL Patterns
@@ -41,6 +47,11 @@ urlpatterns = [
     path('election/create/', ElectionCreateView.as_view(), name='election-create'),
     path('election/available/', AvailableElectionsView.as_view(), name='election-available'),
     path('election/start/', StartElectionView.as_view(), name='election-start'),
+
+    # --- Eleição (Público - Acompanhamento e Busca Aberta) ---
+    path('election/public/open/', PublicElectionViewSet.as_view({'get': 'list'}), name='election-public-open'),
+    path('election/public/<int:pk>/', PublicElectionViewSet.as_view({'get': 'retrieve'}), name='election-public-retrieve'),
+    path('election/track/<int:pk>/', PublicElectionViewSet.as_view({'get': 'retrieve'}), name='election-track-retrieve'),
 
     # --- Votação (Mobile) ---
     path('vote/request/', VoteRequestView.as_view(), name='vote-request'),

@@ -16,7 +16,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
     3. Criptografa os dados de retorno (response) usando a machine_public_key.
     """
 
-    # Rotas de infraestrutura e documentação que não passam por criptografia de hardware
+    # Rotas de infraestrutura e rotas públicas que não passam por criptografia de hardware
     EXEMPT_ROUTES = (
         '/admin',
         '/api/docs',
@@ -25,6 +25,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/static',
         '/media',
         '/votar',
+        '/api/public',
+        '/api/election/public',
+        '/api/election/track',
     )
 
     # Prefixos de rotas para Desktop usando a chave 1
@@ -45,7 +48,6 @@ class SEDecryptMiddleware(MiddlewareMixin):
     MOBILE_ROUTES = (
         '/api/vote/request',       # 1. Solicitação de cédula (recebe public key, retorna cédula da eleição)
         '/api/vote/cast',          # 2. Envio da cédula preenchida (deposita o voto cifrado e emite comprovante)
-        '/api/election/track',     # Acompanhar eleição
     )
 
     def process_request(self, request):
