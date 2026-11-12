@@ -54,6 +54,12 @@ class Election(ElectionProxy, TimestampSchemaMixin):
         default='',
         help_text=_('Digital signature produced by the desktop machine')
     )
+    private_key = models.TextField(
+        _('private key'),
+        null=True,
+        blank=True,
+        help_text=_('Election private key revealed after tallying for public verification')
+    )
     status = models.CharField(
         _('status'),
         max_length=30,

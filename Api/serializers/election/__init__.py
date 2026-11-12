@@ -5,6 +5,12 @@ from .publicElectionSerializer import (
     PublicElectionListSerializer,
     PublicElectionDetailSerializer,
 )
+from .tallyElectionSerializer import (
+    TallyVotesRequestSerializer,
+    TallyVotesResponseSerializer,
+    TallyElectionRequestSerializer,
+    TallyElectionResponseSerializer,
+)
 
 __all__ = [
     'ElectionCreateSerializer',
@@ -14,4 +20,8 @@ __all__ = [
     'PublicElectoralCollegeVoterSerializer',
     'PublicElectionListSerializer',
     'PublicElectionDetailSerializer',
+    'TallyVotesRequestSerializer',
+    'TallyVotesResponseSerializer',
+    'TallyElectionRequestSerializer',
+    'TallyElectionResponseSerializer',
 ]

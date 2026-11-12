@@ -15,6 +15,7 @@ from Api.views.election.electionCreateView import ElectionCreateView
 from Api.views.election.availableElectionsView import AvailableElectionsView
 from Api.views.election.startElectionView import StartElectionView
 from Api.views.election.closeElectionView import CloseElectionView
+from Api.views.election.tallyElectionView import TallyElectionView, TallyElectionVotesView
 
 # ---------------------------------------------------------------------------
 # Mobile Endpoints (Votação)
@@ -49,6 +50,8 @@ urlpatterns = [
     path('election/available/', AvailableElectionsView.as_view(), name='election-available'),
     path('election/start/', StartElectionView.as_view(), name='election-start'),
     path('election/close/', CloseElectionView.as_view(), name='election-close'),
+    path('election/tally/votes/', TallyElectionVotesView.as_view(), name='election-tally-votes'),
+    path('election/tally/', TallyElectionView.as_view(), name='election-tally'),
 
     # --- Eleição (Público - Acompanhamento e Busca Aberta) ---
     path('election/public/open/', PublicElectionViewSet.as_view({'get': 'list'}), name='election-public-open'),

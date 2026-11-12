@@ -82,6 +82,9 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
     pending_count = serializers.SerializerMethodField(help_text="Quantidade de eleitores que ainda não votaram")
     quorum_percentage = serializers.SerializerMethodField(help_text="Percentual atual de quórum atingido")
     electoral_college = serializers.SerializerMethodField(help_text="Lista dos eleitores do colegiado eleitoral e status de voto")
+    private_key = serializers.SerializerMethodField(help_text="Chave privada da eleição revelada após a apuração oficial para verificação pública")
+    tallies = serializers.SerializerMethodField(help_text="Histórico das apurações registradas")
+    votes = serializers.SerializerMethodField(help_text="Cédulas cifradas depositadas na urna anônima")
 
     class Meta:
         model = Election
@@ -96,6 +99,9 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
             'pending_count',
             'quorum_percentage',
             'electoral_college',
+            'private_key',
+            'tallies',
+            'votes',
         ]
         read_only_fields = fields
 
@@ -145,3 +151,31 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
         voter_context = dict(self.context)
         voter_context['election'] = obj
         return PublicElectoralCollegeVoterSerializer(voters_qs, many=True, context=voter_context).data
+
+    def get_private_key(self, obj) -> str | None:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return getattr(obj, 'private_key', None)
+        return None
+
+    def get_tallies(self, obj) -> list:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return [
+                {
+                    "id": t.id,
+                    "tally_hash": t.tally_hash,
+                    "tally_datetime": t.tally_datetime.isoformat() if hasattr(t.tally_datetime, 'isoformat') else str(t.tally_datetime)
+                }
+                for t in obj.tallies.all().order_by('-tally_datetime')
+            ]
+        return []
+
+    def get_votes(self, obj) -> list:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return [
+                {
+                    "id_generated": v.id_generated,
+                    "content": v.content
+                }
+                for v in obj.votes.all().order_by('id')
+            ]
+        return []
