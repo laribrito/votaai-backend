@@ -155,6 +155,7 @@ class PublicElectionTests(APITestCase):
         self.assertEqual(item['total_voters'], 3)
         self.assertEqual(item['voted_count'], 2)
         self.assertEqual(item['quorum_percentage'], 66.67)
+        self.assertEqual(item['abstention_percentage'], 33.33)
 
         # Não deve conter dados sensíveis ou pesados
         self.assertNotIn('public_key', item)
@@ -202,6 +203,7 @@ class PublicElectionTests(APITestCase):
         self.assertEqual(data['voted_count'], 2)
         self.assertEqual(data['pending_count'], 1)
         self.assertEqual(data['quorum_percentage'], 66.67)
+        self.assertEqual(data['abstention_percentage'], 33.33)
 
         # Colegiado eleitoral
         colegiado = data['electoral_college']

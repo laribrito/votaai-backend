@@ -16,6 +16,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.voteSchema import Vote
 from Domain.models.schemas.election.tallySchema import Tally
+from Domain.models.schemas.election.questionSchema import Question
+from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.moderation.userSchema import User
 
 
@@ -83,6 +85,20 @@ class ElectionTallyTests(APITestCase):
             start_datetime=timezone.now(),
             end_datetime=timezone.now(),
             created_by=self.user
+        )
+
+        self.question = Question.objects.create(
+            election=self.election,
+            question="Quem deve ser o Reitor?",
+            order=1
+        )
+        self.option_1 = Option.objects.create(
+            question=self.question,
+            label="Chapa 1 - Renovação"
+        )
+        self.option_2 = Option.objects.create(
+            question=self.question,
+            label="Chapa 2 - Avanço"
         )
 
         # Adiciona votos cifrados de teste
@@ -165,6 +181,10 @@ class ElectionTallyTests(APITestCase):
         self.assertEqual(res_data["status"], "CLOSED")
         self.assertEqual(res_data["total_votos"], 2)
         self.assertEqual(len(res_data["votes"]), 2)
+        self.assertIn("questions", res_data)
+        self.assertEqual(len(res_data["questions"]), 1)
+        self.assertEqual(res_data["questions"][0]["question"], self.question.question)
+        self.assertIn("abstention_percentage", res_data)
         self.assertEqual(res_data["nonceClient"], nonce)
 
     def test_get_votes_unauthorized_machine_fails(self):
@@ -210,7 +230,7 @@ class ElectionTallyTests(APITestCase):
             "tally_hash": tally_hash,
             "private_key": self.election_private_pem,
             "results": {
-                "Reitor 2026": {"Chapa 1": 1, "Chapa 2": 1}
+                "Quem deve ser o Reitor?": {"Chapa 1 - Renovação": 1, "Chapa 2 - Avanço": 1}
             },
             "nonceClient": nonce,
             "machine_public_key": self.machine_public_pem
@@ -224,6 +244,7 @@ class ElectionTallyTests(APITestCase):
         self.assertEqual(res_data["keyHandle"], self.key_handle)
         self.assertEqual(res_data["status"], "TALLIED")
         self.assertEqual(res_data["tally_hash"], tally_hash)
+        self.assertIn("abstention_percentage", res_data)
         self.assertEqual(res_data["nonceClient"], nonce)
 
         # Confirma persistência no banco
@@ -268,6 +289,9 @@ class ElectionTallyTests(APITestCase):
             "keyHandle": self.key_handle,
             "tally_hash": "hash_rogue",
             "private_key": self.election_private_pem,
+            "results": {
+                "Quem deve ser o Reitor?": {"Chapa 1 - Renovação": 1, "Chapa 2 - Avanço": 1}
+            },
             "nonceClient": "nonce-rogue",
             "machine_public_key": rogue_pub_pem
         }
@@ -285,6 +309,9 @@ class ElectionTallyTests(APITestCase):
             "keyHandle": self.key_handle,
             "tally_hash": "hash_dup",
             "private_key": self.election_private_pem,
+            "results": {
+                "Quem deve ser o Reitor?": {"Chapa 1 - Renovação": 1, "Chapa 2 - Avanço": 1}
+            },
             "nonceClient": "nonce-dup",
             "machine_public_key": self.machine_public_pem
         }
@@ -301,6 +328,9 @@ class ElectionTallyTests(APITestCase):
             "keyHandle": self.key_handle,
             "tally_hash": tally_hash,
             "private_key": self.election_private_pem,
+            "results": {
+                "Quem deve ser o Reitor?": {"Chapa 1 - Renovação": 1, "Chapa 2 - Avanço": 1}
+            },
             "nonceClient": "nonce-public-track",
             "machine_public_key": self.machine_public_pem
         }
@@ -321,3 +351,43 @@ class ElectionTallyTests(APITestCase):
         self.assertTrue(len(data["tallies"]) > 0)
         self.assertEqual(data["tallies"][0]["tally_hash"], tally_hash)
         self.assertEqual(len(data["votes"]), 2)
+        self.assertIn("tally_results", data)
+        self.assertIsNotNone(data["tally_results"])
+        self.assertEqual(data["tally_results"]["tally_hash"], tally_hash)
+        self.assertTrue(len(data["tally_results"]["questions"]) > 0)
+
+    def test_tally_without_results_fails(self):
+        """Rejeita apuração sem o campo results obrigatório."""
+        payload = {
+            "keyHandle": self.key_handle,
+            "tally_hash": "hash_no_results",
+            "private_key": self.election_private_pem,
+            "nonceClient": "nonce-no-res",
+            "machine_public_key": self.machine_public_pem
+        }
+        encrypted_req = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_tally, data=encrypted_req, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.election.refresh_from_db()
+        self.assertEqual(self.election.status, ElectionStatus.CLOSED)
+
+    def test_tally_zeroed_results_when_votes_exist_fails(self):
+        """Rejeita apuração com contagem zerada de votos quando a urna possui cédulas."""
+        payload = {
+            "keyHandle": self.key_handle,
+            "tally_hash": "hash_zeroed",
+            "private_key": self.election_private_pem,
+            "results": {
+                "Quem deve ser o Reitor?": {
+                    "Chapa 1 - Renovação": 0,
+                    "Chapa 2 - Avanço": 0
+                }
+            },
+            "nonceClient": "nonce-zeroed",
+            "machine_public_key": self.machine_public_pem
+        }
+        encrypted_req = self._encrypt_request_body(payload)
+        response = self.client.post(self.url_tally, data=encrypted_req, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.election.refresh_from_db()
+        self.assertEqual(self.election.status, ElectionStatus.CLOSED)
