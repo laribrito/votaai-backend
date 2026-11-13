@@ -24,6 +24,12 @@ class Tally(TallyProxy, TimestampSchemaMixin):
         default=timezone.now,
         help_text=_('Date and time when the tally was performed')
     )
+    results = models.JSONField(
+        _('tally results'),
+        null=True,
+        blank=True,
+        help_text=_('Structured tally results by question and option')
+    )
     election = models.ForeignKey(
         'Domain.Election',
         on_delete=models.CASCADE,
