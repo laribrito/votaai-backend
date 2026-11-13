@@ -518,12 +518,36 @@ class ElectionActions:
             for vote in votes_qs
         ]
 
+        # 5. Estrutura descritiva das perguntas e opções para apuração legível
+        questions_qs = election.questions.all().prefetch_related('options').order_by('order', 'id')
+        questions_data = [
+            {
+                "id": q.id,
+                "question": q.question,
+                "order": q.order,
+                "options": [
+                    {"id": opt.id, "label": opt.label}
+                    for opt in q.options.all().order_by('id')
+                ]
+            }
+            for q in questions_qs
+        ]
+
+        total_voters = election.electoral_college.count()
+        total_votos = len(votes_data)
+        abstention_count = max(0, total_voters - total_votos)
+        abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
         result = {
             "keyHandle": election.key_handle,
             "titulo": election.title,
             "status": election.status,
-            "total_votos": len(votes_data),
-            "votes": votes_data
+            "total_votos": total_votos,
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage,
+            "votes": votes_data,
+            "questions": questions_data
         }
         if nonce_client:
             result["nonceClient"] = nonce_client
@@ -562,6 +586,8 @@ class ElectionActions:
             raise ValidationError({"tally_hash": _("The tally cryptographic hash is required.")})
         if not private_key_pem:
             raise ValidationError({"private_key": _("The election private key is required for tally verification.")})
+        if not results or not isinstance(results, dict):
+            raise ValidationError({"results": _("The tally results are required and cannot be empty.")})
 
         # 1. Localiza a eleição
         if isinstance(key_handle, int) or (isinstance(key_handle, str) and key_handle.isdigit()):
@@ -611,12 +637,71 @@ class ElectionActions:
                 "private_key": _("The provided private key does not match the election's public key.")
             })
 
+        election_questions = election.questions.all().prefetch_related('options').order_by('order', 'id')
+        total_voters = election.electoral_college.count()
+        total_votos = election.votes.count()
+        abstention_count = max(0, total_voters - total_votos)
+        abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        # Normaliza a estrutura de questões em results
+        structured_questions = results.get("questions")
+        if not isinstance(structured_questions, list) or len(structured_questions) == 0:
+            summary = results.get("summary") if isinstance(results.get("summary"), dict) else results
+            built_questions = []
+            for q in election_questions:
+                q_dict = summary.get(q.question) or summary.get(str(q.id)) or summary.get(q.id) or {}
+                opts_payload = []
+                q_total = 0
+                for opt in q.options.all().order_by('id'):
+                    v_count = 0
+                    if isinstance(q_dict, dict):
+                        v_count = q_dict.get(opt.label) or q_dict.get(str(opt.id)) or q_dict.get(opt.id) or 0
+                    opts_payload.append({
+                        "id": opt.id,
+                        "label": opt.label,
+                        "votes": int(v_count)
+                    })
+                    q_total += int(v_count)
+
+                for opt_item in opts_payload:
+                    opt_item["percentage"] = round((opt_item["votes"] / q_total) * 100, 2) if q_total > 0 else 0.0
+
+                built_questions.append({
+                    "id": q.id,
+                    "question": q.question,
+                    "total_votes": q_total,
+                    "options": opts_payload
+                })
+            structured_questions = built_questions
+
+        # Validação de integridade estrita:
+        # Se a eleição possui cédulas na urna, a apuração NÃO pode ter contagem zerada
+        total_counted_votes = sum(
+            sum(opt.get("votes", 0) for opt in q.get("options", []))
+            for q in structured_questions
+            if isinstance(q, dict)
+        )
+        if total_votos > 0 and election_questions.exists() and total_counted_votes == 0:
+            raise ValidationError({
+                "results": _("The tally results cannot be zeroed out when ballots exist in the election.")
+            })
+
+        normalized_results = {
+            "summary": results.get("summary", {}),
+            "questions": structured_questions,
+            "total_votos": total_votos,
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage
+        }
+
         # 5. Persistência atômica do Tally e atualização de estado
         with transaction.atomic():
             tally = Tally.objects.create(
                 election=election,
                 tally_hash=str(tally_hash).strip(),
-                tally_datetime=timezone.now()
+                tally_datetime=timezone.now(),
+                results=normalized_results
             )
             election.private_key = private_key_pem.strip()
             election.status = ElectionStatus.TALLIED
@@ -634,6 +719,9 @@ class ElectionActions:
             "tally_id": tally.id,
             "tally_hash": tally.tally_hash,
             "tally_datetime": tally.tally_datetime.isoformat(),
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage,
             "mensagem": str(_("Election tally saved successfully. Private key recorded for public verification."))
         }
 

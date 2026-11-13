@@ -23,9 +23,17 @@ class TallyVotesResponseSerializer(serializers.Serializer):
     titulo = serializers.CharField(help_text="Título da eleição")
     status = serializers.CharField(help_text="Status da eleição (CLOSED ou TALLIED)")
     total_votos = serializers.IntegerField(help_text="Quantidade total de votos registrados na urna")
+    total_voters = serializers.IntegerField(required=False, help_text="Total de eleitores aptos no colegiado eleitoral")
+    abstention_count = serializers.IntegerField(required=False, help_text="Quantidade de eleitores ausentes")
+    abstention_percentage = serializers.FloatField(required=False, help_text="Percentual de abstenção da eleição")
     votes = serializers.ListField(
         child=serializers.DictField(),
         help_text="Lista de cédulas cifradas { id_generated, content }"
+    )
+    questions = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        help_text="Estrutura de perguntas e opções da cédula eleitoral"
     )
     nonceClient = serializers.CharField(required=False, help_text="Nonce retornado para validação anti-replay")
 
@@ -49,7 +57,8 @@ class TallyElectionRequestSerializer(serializers.Serializer):
         help_text="Chave privada da eleição em formato PEM (PKCS#8) para abertura pública da apuração"
     )
     results = serializers.DictField(
-        required=False,
+        required=True,
+        allow_empty=False,
         help_text="Sumário de contagem de votos apurados por questão/opção"
     )
     nonceClient = serializers.CharField(
@@ -66,6 +75,9 @@ class TallyElectionResponseSerializer(serializers.Serializer):
     tally_id = serializers.IntegerField(help_text="Identificador do registro de apuração criado")
     tally_hash = serializers.CharField(help_text="Hash criptográfico auditado da apuração")
     tally_datetime = serializers.CharField(help_text="Data e hora em que a apuração foi registrada")
+    total_voters = serializers.IntegerField(required=False, help_text="Total de eleitores aptos")
+    abstention_count = serializers.IntegerField(required=False, help_text="Quantidade de eleitores ausentes")
+    abstention_percentage = serializers.FloatField(required=False, help_text="Percentual de abstenção da eleição")
     mensagem = serializers.CharField(help_text="Mensagem informativa de sucesso")
     results = serializers.DictField(required=False, help_text="Resultados apurados ecoados")
     nonceClient = serializers.CharField(required=False, help_text="Nonce retornado para validação anti-replay")
