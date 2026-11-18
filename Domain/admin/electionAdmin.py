@@ -18,6 +18,6 @@ class ElectionAdmin(admin.ModelAdmin):
         'created_at'
     )
     list_filter = ('status', 'created_at')
-    search_fields = ('title', 'key_handle')
-    readonly_fields = ('created_at', 'updated_at', 'questions_count', 'options_count')
+    search_fields = ('title', 'key_handle', 'machine_fingerprint')
+    readonly_fields = ('created_at', 'updated_at', 'questions_count', 'options_count', 'machine_fingerprint')
     inlines = [QuestionInline, ElectoralCollegeInline]

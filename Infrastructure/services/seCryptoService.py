@@ -360,6 +360,21 @@ class SECryptoService:
             return str(key_data).strip()
 
     @classmethod
+    def get_machine_fingerprint(cls, machine_public_key: str | bytes | None) -> str:
+        """
+        Gera um identificador público, determinístico e não-replicável da máquina física
+        a partir do hash SHA-256 da chave pública RSA da máquina (PEM canônico).
+        Não expõe dados de SO (/etc/machine-id, endereço MAC ou device_id de autenticação).
+        """
+        if not machine_public_key:
+            return ""
+        norm_pem = cls.to_pem_public_key(machine_public_key).strip()
+        if not norm_pem:
+            return ""
+        digest = hashlib.sha256(norm_pem.encode('utf-8')).hexdigest()[:16]
+        return f"mach_{digest}"
+
+    @classmethod
     def load_rsa_public_key(cls, key_data: str | bytes):
         """
         Carrega chave pública RSA suportando PEM, DER (Base64) e BCRYPT_RSAKEY_BLOB (CNG).
