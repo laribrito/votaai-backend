@@ -57,6 +57,8 @@ urlpatterns = [
     path('election/public/open/', PublicElectionViewSet.as_view({'get': 'list'}), name='election-public-open'),
     path('election/public/<int:pk>/', PublicElectionViewSet.as_view({'get': 'retrieve'}), name='election-public-retrieve'),
     path('election/track/<int:pk>/', PublicElectionViewSet.as_view({'get': 'retrieve'}), name='election-track-retrieve'),
+    path('election/public/<int:pk>/audit-package/', PublicElectionViewSet.as_view({'get': 'audit_package'}), name='election-public-audit-package'),
+    path('election/public/<int:pk>/audit-zip/', PublicElectionViewSet.as_view({'get': 'audit_package'}), name='election-public-audit-zip'),
 
     # --- Votação (Mobile) ---
     path('vote/request/', VoteRequestView.as_view(), name='vote-request'),

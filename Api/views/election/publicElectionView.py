@@ -1,6 +1,9 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from django.db.models import Count, Q
@@ -85,3 +88,49 @@ class PublicElectionViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action == 'list':
             return PublicElectionListSerializer
         return PublicElectionDetailSerializer
+
+    @extend_schema(
+        summary="Baixar pacote de auditoria criptográfica em ZIP (Público)",
+        description=(
+            "Gera e retorna um arquivo ZIP contendo os dados oficiais para auditoria soberana e independente: "
+            "a chave privada da eleição em formato PEM e todos os votos criptografados depositados na urna. "
+            "Disponível publicamente apenas para eleições apuradas (status TALLIED)."
+        ),
+        tags=["Eleições - Público"],
+        responses={
+            200: OpenApiTypes.BINARY,
+            400: {"type": "object", "properties": {"error": {"type": "string"}}},
+            404: {"type": "object", "properties": {"error": {"type": "string"}}},
+        },
+        auth=[]
+    )
+    @action(detail=True, methods=['get'], url_path='audit-package')
+    def audit_package(self, request, pk=None):
+        try:
+            zip_bytes, filename = ElectionActions.gerarPacoteAuditoria(election_id=pk)
+            response = HttpResponse(zip_bytes, content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            response['Content-Length'] = len(zip_bytes)
+            return response
+        except Election.DoesNotExist:
+            return Response(
+                {"error": "Eleição não encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValidationError as ve:
+            detail = ve.detail if hasattr(ve, 'detail') else str(ve)
+            err_msg = detail if isinstance(detail, str) else list(detail.values())[0] if isinstance(detail, dict) else str(detail)
+            return Response(
+                {"error": err_msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Erro inesperado ao gerar pacote de auditoria: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @extend_schema(exclude=True)
+    @action(detail=True, methods=['get'], url_path='audit-zip')
+    def audit_zip(self, request, pk=None):
+        return self.audit_package(request, pk=pk)
