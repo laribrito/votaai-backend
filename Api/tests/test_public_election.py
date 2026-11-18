@@ -1,3 +1,6 @@
+import io
+import json
+import zipfile
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
@@ -6,6 +9,8 @@ from rest_framework import status
 
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.election.voteSchema import Vote
+from Domain.models.schemas.election.tallySchema import Tally
 from Domain.models.schemas.moderation.userSchema import User
 
 
@@ -362,3 +367,112 @@ class PublicElectionTests(APITestCase):
         voters_by_email = {v['email']: v for v in res['electoral_college']}
         self.assertEqual(voters_by_email['luciana.ferreira@votaai.org']['full_name'], "Luciana Ferreira (Ausente)")
         self.assertEqual(voters_by_email['fernando.rocha@votaai.org']['full_name'], "Fernando Rocha")
+
+    def test_audit_package_download_success(self):
+        """Deve baixar com sucesso o pacote ZIP com a chave privada e os votos criptografados de uma eleição TALLIED."""
+        dummy_private_key = (
+            "-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIEowIBAAKCAQEA0T7xX8l1t8+9h1h3dummy...\n"
+            "-----END RSA PRIVATE KEY-----\n"
+        )
+        election_tallied = Election.objects.create(
+            title="Eleição Auditável 2026",
+            public_key="-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8E...\n-----END PUBLIC KEY-----",
+            private_key=dummy_private_key,
+            key_handle="0x81010099",
+            status=ElectionStatus.TALLIED,
+            start_datetime=timezone.now() - timedelta(days=2),
+            end_datetime=timezone.now() - timedelta(days=1),
+            created_by=self.creator
+        )
+
+        Tally.objects.create(
+            election=election_tallied,
+            tally_hash="a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0",
+            tally_datetime=timezone.now() - timedelta(hours=5),
+            results={"total_votos": 2, "questions": []}
+        )
+
+        Vote.objects.create(
+            id_generated="vote-uuid-1",
+            content="ENC_VOTE_PAYLOAD_1_ABCDEF==",
+            election=election_tallied
+        )
+        Vote.objects.create(
+            id_generated="vote-uuid-2",
+            content="ENC_VOTE_PAYLOAD_2_UVWXYZ==",
+            election=election_tallied
+        )
+
+        # Testa a rota via router
+        url_router = f"/api/public/elections/{election_tallied.id}/audit-package/"
+        response = self.client.get(url_router)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'application/zip')
+        self.assertIn(f'auditoria_eleicao_{election_tallied.id}.zip', response['Content-Disposition'])
+
+        # Descompacta em memória e valida o conteúdo dos arquivos
+        zip_buffer = io.BytesIO(response.content)
+        with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
+            filenames = zip_file.namelist()
+            self.assertEqual(len(filenames), 4)
+            self.assertIn('chave_privada.pem', filenames)
+            self.assertIn('votos_criptografados.json', filenames)
+            self.assertIn('dados_eleicao.json', filenames)
+            self.assertIn('LEIAME.txt', filenames)
+            self.assertNotIn('private_key.pem', filenames)
+            self.assertNotIn('encrypted_votes.json', filenames)
+
+            # Valida chave privada
+            chave_privada_content = zip_file.read('chave_privada.pem').decode('utf-8')
+            self.assertEqual(chave_privada_content.strip(), dummy_private_key.strip())
+
+            # Valida votos criptografados
+            votos_json = json.loads(zip_file.read('votos_criptografados.json').decode('utf-8'))
+            self.assertEqual(len(votos_json), 2)
+            self.assertEqual(votos_json[0]['id_generated'], 'vote-uuid-1')
+            self.assertEqual(votos_json[0]['content'], 'ENC_VOTE_PAYLOAD_1_ABCDEF==')
+            self.assertEqual(votos_json[1]['id_generated'], 'vote-uuid-2')
+            self.assertEqual(votos_json[1]['content'], 'ENC_VOTE_PAYLOAD_2_UVWXYZ==')
+
+            # Valida dados da eleição
+            meta_json = json.loads(zip_file.read('dados_eleicao.json').decode('utf-8'))
+            self.assertEqual(meta_json['id'], election_tallied.id)
+            self.assertEqual(meta_json['title'], "Eleição Auditável 2026")
+            self.assertEqual(meta_json['key_handle'], "0x81010099")
+            self.assertIn('machine_fingerprint', meta_json)
+            self.assertEqual(meta_json['status'], ElectionStatus.TALLIED)
+            self.assertEqual(meta_json['total_votes'], 2)
+
+    def test_audit_package_download_via_direct_url_alias(self):
+        """Testa o download do zip via rota direta /api/election/public/<id>/audit-package/."""
+        election_tallied = Election.objects.create(
+            title="Eleição Auditável Rota Direta",
+            public_key="-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8E...\n-----END PUBLIC KEY-----",
+            private_key="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASC...\n-----END PRIVATE KEY-----",
+            key_handle="0x81010098",
+            status=ElectionStatus.TALLIED,
+            created_by=self.creator
+        )
+        url = reverse('election-public-audit-package', kwargs={'pk': election_tallied.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'application/zip')
+
+    def test_audit_package_rejects_non_tallied_election(self):
+        """Eleições ainda não apuradas (STARTED, CLOSED) não devem permitir download do pacote com chave privada."""
+        url = f"/api/public/elections/{self.election_open_1.id}/audit-package/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        data = response.json()
+        self.assertIn("error", data)
+
+        url_closed = f"/api/public/elections/{self.election_closed.id}/audit-package/"
+        response_closed = self.client.get(url_closed)
+        self.assertEqual(response_closed.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_audit_package_not_found_election(self):
+        """Retorna 404 para eleição inexistente."""
+        url = "/api/public/elections/999999/audit-package/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

@@ -178,6 +178,7 @@ class ElectionTallyTests(APITestCase):
         res_data = self._decrypt_response_body(response)
 
         self.assertEqual(res_data["keyHandle"], self.key_handle)
+        self.assertTrue(res_data.get("machine_fingerprint", "").startswith("mach_"))
         self.assertEqual(res_data["status"], "CLOSED")
         self.assertEqual(res_data["total_votos"], 2)
         self.assertEqual(len(res_data["votes"]), 2)
@@ -242,6 +243,7 @@ class ElectionTallyTests(APITestCase):
         res_data = self._decrypt_response_body(response)
 
         self.assertEqual(res_data["keyHandle"], self.key_handle)
+        self.assertTrue(res_data.get("machine_fingerprint", "").startswith("mach_"))
         self.assertEqual(res_data["status"], "TALLIED")
         self.assertEqual(res_data["tally_hash"], tally_hash)
         self.assertIn("abstention_percentage", res_data)

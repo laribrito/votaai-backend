@@ -207,6 +207,9 @@ class ElectionCreateTests(APITestCase):
         self.assertIsNotNone(election)
         self.assertEqual(election.title, titulo)
         self.assertEqual(election.key_handle, key_handle)
+        expected_fp = SECryptoService.get_machine_fingerprint(self.machine_public_pem)
+        self.assertEqual(election.machine_fingerprint, expected_fp)
+        self.assertTrue(election.machine_fingerprint.startswith("mach_"))
         self.assertEqual(election.status, ElectionStatus.CREATED)
         self.assertEqual(election.created_by, self.user)
         self.assertEqual(election.questions_count, 2)
@@ -306,4 +309,54 @@ class ElectionCreateTests(APITestCase):
         decrypted_response = self._decrypt_response_body(response)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("ballot", decrypted_response)
+
+    def test_create_two_elections_with_duplicate_key_handle_fails_but_distinct_handles_share_machine_fingerprint(self):
+        """
+        Valida que duas eleições na mesma máquina devem ter key_handle únicos,
+        e ambas compartilham o mesmo machine_fingerprint não-replicável.
+        """
+        ballot_data = [{"question": "Pergunta 1", "options": ["Sim", "Não"]}]
+        college_data = ["eleitor1@votaai.org"]
+
+        # 1ª Eleição
+        payload1 = {
+            "title": "Eleição 1",
+            "ballot": ballot_data,
+            "electoral_college": college_data,
+            "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...\n-----END PUBLIC KEY-----",
+            "key_handle": "votaai_election_aa11bb22cc33dd44",
+            "machine_public_key": self.machine_public_pem
+        }
+        canonical1 = json.dumps(payload1, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        payload1["signature"] = self._sign_with_machine_key(canonical1)
+        resp1 = self.client.post(self.url_create, data=self._encrypt_request_body(payload1), format='json')
+        self.assertEqual(resp1.status_code, status.HTTP_200_OK)
+
+        # Tentativa com o mesmo key_handle deve falhar com 400
+        payload_dup = dict(payload1)
+        payload_dup.pop("signature", None)
+        payload_dup["title"] = "Eleição Duplicada"
+        canonical_dup = json.dumps(payload_dup, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        payload_dup["signature"] = self._sign_with_machine_key(canonical_dup)
+        resp_dup = self.client.post(self.url_create, data=self._encrypt_request_body(payload_dup), format='json')
+        self.assertEqual(resp_dup.status_code, status.HTTP_400_BAD_REQUEST)
+        dec_dup = self._decrypt_response_body(resp_dup)
+        self.assertIn("key_handle", dec_dup)
+
+        # 2ª Eleição com key_handle distinto sucede e mantém o mesmo machine_fingerprint
+        payload2 = dict(payload1)
+        payload2.pop("signature", None)
+        payload2["title"] = "Eleição 2"
+        payload2["key_handle"] = "votaai_election_ee55ff6677889900"
+        canonical2 = json.dumps(payload2, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        payload2["signature"] = self._sign_with_machine_key(canonical2)
+        resp2 = self.client.post(self.url_create, data=self._encrypt_request_body(payload2), format='json')
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+
+        el1 = Election.objects.get(key_handle="votaai_election_aa11bb22cc33dd44")
+        el2 = Election.objects.get(key_handle="votaai_election_ee55ff6677889900")
+        self.assertNotEqual(el1.key_handle, el2.key_handle)
+        self.assertEqual(el1.machine_fingerprint, el2.machine_fingerprint)
+        self.assertTrue(el1.machine_fingerprint.startswith("mach_"))
+
 
