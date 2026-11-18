@@ -58,6 +58,29 @@ class User(UserProxy, AbstractUser, TimestampSchemaMixin):
         null=True,
         help_text=_('Base32 secret for two-factor authentication (TOTP)')
     )
+    email_verified = models.BooleanField(
+        _('email verified'),
+        default=False,
+        help_text=_('Indicates whether the administrator email has been verified during registration')
+    )
+    email_verification_code_hash = models.CharField(
+        _('email verification code hash'),
+        max_length=128,
+        blank=True,
+        null=True,
+        help_text=_('SHA-256 hash of the 6-digit email verification code')
+    )
+    email_verification_expires_at = models.DateTimeField(
+        _('email verification expires at'),
+        blank=True,
+        null=True,
+        help_text=_('Expiration timestamp for the email verification code')
+    )
+    email_verification_attempts = models.PositiveSmallIntegerField(
+        _('email verification attempts'),
+        default=0,
+        help_text=_('Number of failed email verification attempts for the current code')
+    )
 
     def save(self, *args, **kwargs):
         if self.machine_public_key:
