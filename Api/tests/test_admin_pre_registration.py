@@ -1,10 +1,14 @@
 import os
+import re
 import json
 import base64
 import struct
+from datetime import timedelta
 from pathlib import Path
 from django.conf import settings
+from django.core import mail
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework import status
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -49,7 +53,36 @@ class AdminPreRegistrationTests(APITestCase):
 
         self.device_id = "dev-test-suite-machine"
         self.url_start = reverse('admin-pre-registration-start')
+        self.url_verify_email = reverse('admin-pre-registration-verify-email')
+        self.url_resend_email = reverse('admin-pre-registration-resend-email')
         self.url_confirm = reverse('admin-pre-registration-confirm')
+
+    def _extract_verification_code(self, email_address: str) -> str:
+        """Extrai o código de 6 dígitos enviado no último e-mail da outbox para o destinatário."""
+        for message in reversed(mail.outbox):
+            if email_address in message.to:
+                match = re.search(r'\b(\d{6})\b', message.body)
+                if match:
+                    return match.group(1)
+        self.fail(f"Código de verificação não encontrado na outbox para {email_address}")
+
+    def _verify_email_for_user(self, email: str, device_id: str | None = None) -> dict:
+        """Helper para executar a etapa de verificação de e-mail nos testes."""
+        code = self._extract_verification_code(email)
+        req_verify = {
+            "email": email,
+            "verification_code": code,
+            "device_id": device_id or self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_verify["signature"] = self._sign_payload(req_verify)
+        response = self.client.post(
+            self.url_verify_email,
+            data=self._encrypt_request_body(req_verify),
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return self._decrypt_response_body(response)
 
     def _sign_payload(self, payload_dict: dict) -> str:
         """Gera a assinatura canônica RSA-PSS do payload para simular o hardware TPM."""
@@ -115,17 +148,16 @@ class AdminPreRegistrationTests(APITestCase):
 
     def test_full_admin_pre_registration_flow_success(self):
         """
-        Testa o fluxo completo de pré-cadastro e confirmação conforme o diagrama de sequência:
-        1. Desktop -> API: email, senha, chave_publica_maquina (cifrado)
-        2. API -> Desktop: mensagem, uri_provisionamento (assinado com TPM, cifrado para a máquina)
-        3. Desktop -> API: email, codigo_totp (assinado com a máquina, cifrado para o servidor)
-        4. API -> Desktop: mensagem (assinado com TPM, cifrado para a máquina), ativa usuário com role Administrador.
+        Testa o fluxo completo de pré-cadastro com verificação de e-mail:
+        1. Desktop -> API: email, senha, chave_publica_maquina, device_id (cifrado) -> envia código por e-mail
+        2. Desktop -> API: email, verification_code, assinatura da máquina -> valida código e retorna provisioning_uri (TOTP)
+        3. Desktop -> API: email, totp_code, assinatura da máquina -> ativa usuário com role Administrador.
         """
         admin_email = "admin.electoral@votaai.org"
         admin_pass = "SenhaUltraSegura!2026"
 
         # -------------------------------------------------------------
-        # ETAPA 1 & 2: Iniciar pré-cadastro
+        # ETAPA 1: Iniciar pré-cadastro (envia código de verificação por e-mail)
         # -------------------------------------------------------------
         req_step1 = {
             "email": admin_email,
@@ -138,36 +170,54 @@ class AdminPreRegistrationTests(APITestCase):
         response_step1 = self.client.post(self.url_start, data=body_step1, format='json')
         self.assertEqual(response_step1.status_code, status.HTTP_200_OK)
 
-        resp_step2 = self._decrypt_response_body(response_step1)
+        resp_step1 = self._decrypt_response_body(response_step1)
+        self.assertIn("message", resp_step1)
+        self.assertIn("signature", resp_step1)
+        self.assertNotIn("provisioning_uri", resp_step1)
+
+        server_sig_valid_step1 = SECryptoService.verify_signature(
+            self.backend_public_key,
+            resp_step1["message"].encode('utf-8'),
+            resp_step1["signature"]
+        )
+        self.assertTrue(server_sig_valid_step1, "Assinatura do servidor no passo 1 é inválida!")
+
+        # Valida o estado no modelo User antes da verificação de e-mail
+        user = User.objects.filter(email=admin_email).first()
+        self.assertIsNotNone(user)
+        self.assertFalse(user.is_active, "Usuário deveria estar inativo até a confirmação final.")
+        self.assertFalse(user.email_verified, "E-mail ainda não deveria estar verificado.")
+        self.assertEqual(user.machine_public_key, self.machine_public_pem.strip())
+        self.assertIsNone(user.totp_secret)
+
+        # -------------------------------------------------------------
+        # ETAPA 2: Verificar e-mail com código de 6 dígitos
+        # -------------------------------------------------------------
+        resp_step2 = self._verify_email_for_user(admin_email)
         self.assertIn("message", resp_step2)
         self.assertIn("provisioning_uri", resp_step2)
         self.assertIn("signature", resp_step2)
 
-        # Valida a assinatura digital do TPM do servidor
         provisioning_uri = resp_step2["provisioning_uri"]
         message_step2 = resp_step2["message"]
         data_signed_by_server = f"{message_step2}:{provisioning_uri}".encode('utf-8')
-        server_sig_valid = SECryptoService.verify_signature(
+        server_sig_valid_step2 = SECryptoService.verify_signature(
             self.backend_public_key,
             data_signed_by_server,
             resp_step2["signature"]
         )
-        self.assertTrue(server_sig_valid, "Assinatura do servidor no passo 2 é inválida!")
+        self.assertTrue(server_sig_valid_step2, "Assinatura do servidor no passo 2 é inválida!")
 
-        # Valida o estado no modelo User
-        user = User.objects.filter(email=admin_email).first()
-        self.assertIsNotNone(user)
-        self.assertFalse(user.is_active, "Usuário deveria estar inativo até a confirmação TOTP.")
-        self.assertEqual(user.machine_public_key, self.machine_public_pem.strip())
+        user.refresh_from_db()
+        self.assertTrue(user.email_verified)
         self.assertIsNotNone(user.totp_secret)
+        self.assertIsNone(user.email_verification_code_hash)
 
         # -------------------------------------------------------------
-        # ETAPA 3 & 4: Confirmar pré-cadastro com TOTP e Assinatura da Máquina
+        # ETAPA 3: Confirmar pré-cadastro com TOTP e Assinatura da Máquina
         # -------------------------------------------------------------
-        # Desktop gera o código TOTP a partir do segredo provisionado
         totp_code = TOTPService.generate_totp(user.totp_secret)
 
-        # Desktop assina a confirmação com a chave privada da máquina física
         req_step3 = {
             "email": admin_email,
             "totp_code": totp_code,
@@ -184,16 +234,14 @@ class AdminPreRegistrationTests(APITestCase):
         self.assertIn("message", resp_step4)
         self.assertIn("signature", resp_step4)
 
-        # Valida a assinatura digital do servidor no passo 4
         message_step4 = resp_step4["message"]
         server_sig_valid_step4 = SECryptoService.verify_signature(
             self.backend_public_key,
             message_step4.encode('utf-8'),
             resp_step4["signature"]
         )
-        self.assertTrue(server_sig_valid_step4, "Assinatura do servidor no passo 4 é inválida!")
+        self.assertTrue(server_sig_valid_step4, "Assinatura do servidor no passo 3 é inválida!")
 
-        # Valida ativação e role no modelo User
         user.refresh_from_db()
         self.assertTrue(user.is_active, "Usuário deveria estar ativo após a confirmação TOTP!")
         self.assertTrue(user.groups.filter(name=GroupRoles.ADMIN.value).exists(), "Usuário deve pertencer ao grupo Administrador!")
@@ -209,8 +257,8 @@ class AdminPreRegistrationTests(APITestCase):
         }
         req_step1["signature"] = self._sign_payload(req_step1)
         self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+        self._verify_email_for_user(admin_email)
 
-        user = User.objects.get(email=admin_email)
         invalid_totp = "000000"
 
         req_step3 = {
@@ -238,6 +286,7 @@ class AdminPreRegistrationTests(APITestCase):
         }
         req_step1["signature"] = self._sign_payload(req_step1)
         self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+        self._verify_email_for_user(admin_email)
 
         user = User.objects.get(email=admin_email)
         totp_code = TOTPService.generate_totp(user.totp_secret)
@@ -396,7 +445,11 @@ class AdminPreRegistrationTests(APITestCase):
         self.assertEqual(response_step1.status_code, status.HTTP_200_OK)
 
         resp_data1 = self._decrypt_response_body(response_step1)
-        self.assertIn("provisioning_uri", resp_data1)
+        self.assertIn("message", resp_data1)
+
+        # 3.5. Verificação de e-mail
+        resp_verify = self._verify_email_for_user(admin_email, device_id=device_id)
+        self.assertIn("provisioning_uri", resp_verify)
 
         # 4. Confirmação com TOTP
         user = User.objects.get(email=admin_email)
@@ -426,6 +479,139 @@ class AdminPreRegistrationTests(APITestCase):
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertTrue(user.groups.filter(name=GroupRoles.ADMIN.value).exists())
+
+    def test_confirm_without_email_verification_fails(self):
+        """Valida que tentar confirmar o pré-cadastro sem verificar o e-mail retorna erro 400."""
+        admin_email = "unverified.admin@votaai.org"
+        req_step1 = {
+            "email": admin_email,
+            "password": "SenhaValida123!",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_step1["signature"] = self._sign_payload(req_step1)
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+
+        req_confirm = {
+            "email": admin_email,
+            "totp_code": "123456",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_confirm["signature"] = self._sign_payload(req_confirm)
+
+        response = self.client.post(self.url_confirm, data=self._encrypt_request_body(req_confirm), format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("email", resp_data)
+
+    def test_verify_email_with_invalid_code_fails(self):
+        """Valida que código de verificação de e-mail incorreto retorna 400 e incrementa tentativas."""
+        admin_email = "invalid.code@votaai.org"
+        req_step1 = {
+            "email": admin_email,
+            "password": "SenhaValida123!",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_step1["signature"] = self._sign_payload(req_step1)
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+
+        req_verify = {
+            "email": admin_email,
+            "verification_code": "999999",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_verify["signature"] = self._sign_payload(req_verify)
+        response = self.client.post(self.url_verify_email, data=self._encrypt_request_body(req_verify), format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("verification_code", resp_data)
+
+        user = User.objects.get(email=admin_email)
+        self.assertFalse(user.email_verified)
+        self.assertEqual(user.email_verification_attempts, 1)
+
+    def test_verify_email_with_expired_code_fails(self):
+        """Valida que código de verificação expirado retorna erro 400."""
+        admin_email = "expired.code@votaai.org"
+        req_step1 = {
+            "email": admin_email,
+            "password": "SenhaValida123!",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_step1["signature"] = self._sign_payload(req_step1)
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+
+        code = self._extract_verification_code(admin_email)
+        User.objects.filter(email=admin_email).update(
+            email_verification_expires_at=timezone.now() - timedelta(minutes=1)
+        )
+
+        req_verify = {
+            "email": admin_email,
+            "verification_code": code,
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_verify["signature"] = self._sign_payload(req_verify)
+        response = self.client.post(self.url_verify_email, data=self._encrypt_request_body(req_verify), format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_data = self._decrypt_response_body(response)
+        self.assertIn("verification_code", resp_data)
+
+    def test_verify_email_max_attempts_and_resend_success(self):
+        """Valida bloqueio após 5 tentativas inválidas e desbloqueio ao reenviar novo código."""
+        admin_email = "resend.code@votaai.org"
+        req_step1 = {
+            "email": admin_email,
+            "password": "SenhaValida123!",
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_step1["signature"] = self._sign_payload(req_step1)
+        self.client.post(self.url_start, data=self._encrypt_request_body(req_step1), format='json')
+
+        first_code = self._extract_verification_code(admin_email)
+        wrong_code = "000000" if first_code != "000000" else "111111"
+
+        for _ in range(5):
+            req_bad = {
+                "email": admin_email,
+                "verification_code": wrong_code,
+                "device_id": self.device_id,
+                "machine_public_key": self.machine_public_pem
+            }
+            req_bad["signature"] = self._sign_payload(req_bad)
+            resp = self.client.post(self.url_verify_email, data=self._encrypt_request_body(req_bad), format='json')
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Mesmo com o código correto, deve falhar por exceder tentativas
+        req_blocked = {
+            "email": admin_email,
+            "verification_code": first_code,
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_blocked["signature"] = self._sign_payload(req_blocked)
+        resp_blocked = self.client.post(self.url_verify_email, data=self._encrypt_request_body(req_blocked), format='json')
+        self.assertEqual(resp_blocked.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Reenvia novo código
+        req_resend = {
+            "email": admin_email,
+            "device_id": self.device_id,
+            "machine_public_key": self.machine_public_pem
+        }
+        req_resend["signature"] = self._sign_payload(req_resend)
+        resp_resend = self.client.post(self.url_resend_email, data=self._encrypt_request_body(req_resend), format='json')
+        self.assertEqual(resp_resend.status_code, status.HTTP_200_OK)
+
+        # Agora verifica com o novo código
+        resp_verify = self._verify_email_for_user(admin_email)
+        self.assertIn("provisioning_uri", resp_verify)
 
 
 
