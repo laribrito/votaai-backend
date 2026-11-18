@@ -190,15 +190,16 @@ class VoteCastViewTests(APITestCase):
         resp_data = response.json()
         decrypted_data = self._decrypt_response_body(resp_data)
 
-        self.assertIn('receipt', decrypted_data)
-        self.assertTrue(decrypted_data['receipt'].startswith('VOTE-'))
+        self.assertNotIn('receipt', decrypted_data)
+        self.assertNotIn('id_voto', decrypted_data)
         self.assertEqual(decrypted_data['status'], 'CONFIRMED')
         self.assertEqual(decrypted_data['election_id'], self.election.id)
         self.assertEqual(decrypted_data['nonce'], self.default_nonce)
 
         # Confirma que o voto foi persistido anonimamente na tabela Vote
-        vote_obj = Vote.objects.filter(id_generated=decrypted_data['receipt']).first()
+        vote_obj = Vote.objects.filter(election=self.election, content=self.encrypted_ballot_content).first()
         self.assertIsNotNone(vote_obj)
+        self.assertTrue(vote_obj.id_generated.startswith('VOTE-'))
         self.assertEqual(vote_obj.content, self.encrypted_ballot_content)
         self.assertEqual(vote_obj.election_id, self.election.id)
 
@@ -207,9 +208,14 @@ class VoteCastViewTests(APITestCase):
         self.assertTrue(self.voting_token.is_used)
         self.assertIsNone(self.voting_token.used_at)  # Timestamp descorrelacionado para sigilo anônimo
 
-        # Confirma que o eleitor foi marcado como tendo votado
+        # Confirma que o eleitor foi marcado como tendo votado com timestamp registrado no colegiado
         self.voter.refresh_from_db()
         self.assertTrue(self.voter.has_voted)
+        self.assertIsNotNone(self.voter.voted_at)
+
+        # Confirma que a entidade Vote não possui campos de timestamp (created_at / updated_at)
+        self.assertFalse(hasattr(vote_obj, 'created_at'))
+        self.assertFalse(hasattr(vote_obj, 'updated_at'))
 
     def test_cast_vote_with_signature(self):
         """Verifica o depósito da cédula acompanhada de assinatura digital StrongBox válida."""
@@ -234,7 +240,8 @@ class VoteCastViewTests(APITestCase):
 
         decrypted_data = self._decrypt_response_body(response.json())
         self.assertEqual(decrypted_data['status'], 'CONFIRMED')
-        self.assertTrue(decrypted_data['receipt'].startswith('VOTE-'))
+        self.assertNotIn('receipt', decrypted_data)
+        self.assertNotIn('id_voto', decrypted_data)
 
     def test_cast_vote_invalid_token(self):
         """Token inexistente deve ser rejeitado com erro de validação."""
@@ -385,13 +392,14 @@ class VoteCastViewTests(APITestCase):
 
         decrypted_data = self._decrypt_response_body(response.json())
         self.assertEqual(decrypted_data['status'], 'CONFIRMED')
-        self.assertTrue(decrypted_data['receipt'].startswith('VOTE-'))
-        self.assertEqual(decrypted_data['id_voto'], vote_id)
+        self.assertNotIn('receipt', decrypted_data)
+        self.assertNotIn('id_voto', decrypted_data)
         self.assertEqual(decrypted_data['nonce'], "nonce-layered-test-010")
 
         # Verifica persistência anônima
-        vote_obj = Vote.objects.filter(id_generated=decrypted_data['receipt']).first()
+        vote_obj = Vote.objects.filter(election=self.election, content=content_json).first()
         self.assertIsNotNone(vote_obj)
+        self.assertTrue(vote_obj.id_generated.startswith('VOTE-'))
         self.assertEqual(vote_obj.content, content_json)
 
         # Verifica consumo do BallotTicket com seu próprio timestamp isolado
@@ -518,7 +526,8 @@ class VoteCastViewTests(APITestCase):
             None
         ).decode('utf-8'))
         self.assertEqual(decrypted["status"], "CONFIRMED")
-        self.assertEqual(decrypted["id_voto"], id_voto_2)
+        self.assertNotIn("receipt", decrypted)
+        self.assertNotIn("id_voto", decrypted)
 
         # Confirma que token e eleitor foram marcados como finalizados
         self.voting_token.refresh_from_db()
