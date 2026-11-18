@@ -46,13 +46,28 @@ class Election(ElectionProxy, TimestampSchemaMixin):
     key_handle = models.CharField(
         _('key handle'),
         max_length=255,
-        help_text=_('Hardware key handle in the machine TPM/SE')
+        unique=True,
+        help_text=_('Unique election key handle in the machine storage')
+    )
+    machine_fingerprint = models.CharField(
+        _('machine fingerprint'),
+        max_length=64,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text=_('Non-replicable public SHA-256 fingerprint of the physical machine public key')
     )
     machine_signature = models.TextField(
         _('machine signature'),
         blank=True,
         default='',
         help_text=_('Digital signature produced by the desktop machine')
+    )
+    private_key = models.TextField(
+        _('private key'),
+        null=True,
+        blank=True,
+        help_text=_('Election private key revealed after tallying for public verification')
     )
     status = models.CharField(
         _('status'),
@@ -81,6 +96,12 @@ class Election(ElectionProxy, TimestampSchemaMixin):
             try:
                 from Infrastructure.services.seCryptoService import SECryptoService
                 self.public_key = SECryptoService.to_pem_public_key(self.public_key)
+            except Exception:
+                pass
+        if not self.machine_fingerprint and self.created_by and getattr(self.created_by, 'machine_public_key', None):
+            try:
+                from Infrastructure.services.seCryptoService import SECryptoService
+                self.machine_fingerprint = SECryptoService.get_machine_fingerprint(self.created_by.machine_public_key)
             except Exception:
                 pass
         super().save(*args, **kwargs)

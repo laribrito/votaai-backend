@@ -14,14 +14,17 @@ O sistema implementa criptografia de ponta a ponta (E2EE), integração com mód
 - `POST /api/auth/login/` — Autentica o administrador com 2FA (TOTP) e verificação estrita de assinatura de hardware TPM
 
 ### 🗳️ Gestão de Eleições (Desktop)
-- `POST /api/election/create/` — Cadastra uma nova eleição com cédula, perguntas, opções e colégio eleitoral
-- `POST /api/election/available/` — Lista as eleições criadas e disponíveis para serem iniciadas pela máquina vinculada
+- `POST /api/election/create/` — Cadastra uma nova eleição com `key_handle` exclusivo por pleito (`votaai_election_<16_hex>`), registra o identificador público não-replicável da máquina (`machine_fingerprint = mach_<16_hex>`), cédula, perguntas, opções e colégio eleitoral
+- `POST /api/election/available/` — Lista as eleições criadas e disponíveis para serem iniciadas (ou filtradas por status `STARTED` / `CLOSED`) pela máquina vinculada
 - `POST /api/election/start/` — Inicia a eleição, valida a chave criptográfica e despacha tokens únicos de votação por e-mail
-- `POST /api/election/close/` — Encerra o período de votação de uma eleição ativa (STARTED), congelando o quórum de votantes e bloqueando novos votos mediante assinatura de hardware da eleição e da máquina
+- `POST /api/election/close/` — Encerra o período de votação de uma eleição ativa (`STARTED`), congelando o quórum de votantes e bloqueando novos votos mediante assinatura de hardware da eleição e da máquina
+- `POST /api/election/tally/votes/` — Retorna as cédulas cifradas da urna, estrutura de questões e métricas de abstenção de uma eleição encerrada (`CLOSED`) para a máquina criadora autenticada realizar a apuração
+- `POST /api/election/tally/` — Registra a primeira apuração oficial (`tally_hash` SHA-256 e contagem estruturada), valida matematicamente e publica a chave privada da eleição (`private_key` PEM), transicionando o status para `TALLIED`
 
-### 🌐 Acompanhamento Público e Monitoramento de Quórum (Público / Mobile / Web)
+### 🌐 Acompanhamento Público, Monitoramento de Quórum e Auditoria (Público / Mobile / Web / Desktop)
 - `GET /api/election/public/open/` ou `GET /api/public/elections/` — Lista todas as eleições a partir do status de iniciada (`STARTED`, `CLOSED`, `TALLIED`) com dados essenciais, datas (`start_datetime`, `end_datetime`) e métricas de quórum percentual
-- `GET /api/election/track/<int:id>/` ou `GET /api/public/elections/<int:id>/` — Acompanha uma eleição específica, exibindo datas de início e finalização, quórum em tempo real ou congelado (`STARTED` / `CLOSED`), porcentagem de quórum e participantes do colegiado eleitoral (indicando `(Ausente)` para quem não votou quando a eleição for encerrada)
+- `GET /api/election/track/<int:id>/` ou `GET /api/public/elections/<int:id>/` — Acompanha uma eleição específica, exibindo datas de início e finalização, quórum em tempo real ou congelado (`STARTED` / `CLOSED` / `TALLIED`), porcentagem de quórum e participantes do colegiado eleitoral (indicando `(Ausente)` para quem não votou quando a eleição for encerrada)
+- `GET /api/public/elections/<int:id>/audit-package/` ou `GET /api/election/public/<int:id>/audit-package/` — Gera e faz download do pacote ZIP oficial de auditoria criptográfica (`auditoria_eleicao_<id>.zip`) para eleições apuradas (`TALLIED`), contendo `chave_privada.pem`, `votos_criptografados.json`, `dados_eleicao.json` (com `key_handle` único da eleição e `machine_fingerprint` da máquina apuradora) e `LEIAME.txt`
 
 ### 🌐 Cédula Web e Landing Page (Web / QR Code)
 - `GET /votar/` ou `GET /votar/<str:token>/` — Exibe a página com QR Code seguro anti-cache e suporta validação assíncrona (`?check=1`)
@@ -223,7 +226,7 @@ sequenceDiagram
 
 ### 5. Cadastrar Nova Eleição (`POST /api/election/create/`)
 
-Cria atomicamente as entidades relacionais da eleição (Cédula, Perguntas, Opções e Colégio Eleitoral), validando a assinatura de hardware da máquina criadora e gerando assinatura digital de resposta via TPM.
+Cria atomicamente as entidades relacionais da eleição (Cédula, Perguntas, Opções e Colégio Eleitoral), validando a assinatura de hardware da máquina criadora, garantindo a unicidade do `key_handle` da eleição, derivando o identificador público não-replicável da máquina (`machine_fingerprint = mach_<sha256_public_key[:16]>`) e gerando assinatura digital de resposta via TPM.
 
 ```mermaid
 sequenceDiagram
@@ -241,10 +244,11 @@ sequenceDiagram
     View->>Actions: criarEleicao(validated_data)
     Actions->>Actions: Valida estrutura da cédula (perguntas e opções >= 1)
     Actions->>Actions: Valida assinatura digital da máquina física com machine_public_key
-    Actions->>DB: Identifica criador vinculado à machine_public_key
+    Actions->>Actions: Calcula machine_fingerprint = SECryptoService.get_machine_fingerprint(machine_public_key)
+    Actions->>DB: Identifica criador vinculado à machine_public_key e verifica unicidade de key_handle
     Actions->>DB: Transação Atômica:
     activate DB
-    DB->>DB: 1. Cria Election (status=CREATED, public_key, key_handle)
+    DB->>DB: 1. Cria Election (status=CREATED, public_key, key_handle [UNIQUE], machine_fingerprint)
     DB->>DB: 2. Cria Questions e realiza bulk_create de Options
     DB->>DB: 3. Processa eleitores (extrai primeiro nome como apelido) e bulk_create de ElectoralCollege
     deactivate DB
@@ -496,8 +500,79 @@ sequenceDiagram
         Publico->>View: GET /api/election/track/<id>/?has_voted=true&search=...
         View->>DB: Busca Election (exclude status=CREATED) e anota quórum
         DB-->>View: Dados da Eleição e Colegiado Eleitoral
-        View->>View: Sanitiza eleitores e anexa "(Ausente)" no nome de não votantes se CLOSED
-        View-->>Publico: 200 OK: {id, title, status: STARTED|CLOSED, start_datetime, end_datetime, total_voters, voted_count, pending_count, quorum_percentage, electoral_college: [{id, full_name, email, has_voted}, ...]}
+        View->>View: Sanitiza eleitores e anexa "(Ausente)" no nome de não votantes se CLOSED/TALLIED
+        View-->>Publico: 200 OK: {id, title, status: STARTED|CLOSED|TALLIED, start_datetime, end_datetime, total_voters, voted_count, pending_count, quorum_percentage, electoral_college: [...]}
+    end
+```
+
+---
+
+### 13. Apuração Soberana e Revelação da Chave Privada (`POST /api/election/tally/votes/`, `POST /api/election/tally/`)
+
+Realiza a apuração oficial de uma eleição encerrada (`CLOSED`) exclusivamente pela máquina física autenticada que a criou. Na primeira etapa, a máquina resgata as cédulas cifradas da urna; na segunda, após decifrar os votos localmente em RAM, envia o resumo de resultados, o hash canônico SHA-256 (`tally_hash`) e a chave privada da eleição (`private_key` PEM). O backend valida matematicamente que a chave privada deriva a chave pública da eleição e transiciona o status para `TALLIED`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Desktop as Aplicação Desktop
+    participant MW as SEDecryptMiddleware
+    participant View as TallyVotesView / TallyElectionView
+    participant Actions as ElectionActions
+    participant Crypto as SECryptoService
+    participant DB as Banco de Dados (Election, Vote, Tally)
+
+    Note over Desktop,DB: Etapa 1: Resgate Seguro das Cédulas Cifradas
+    Desktop->>MW: POST /api/election/tally/votes/<br/>(keyHandle, nonceClient, machine_public_key, signature)
+    MW->>MW: Descriptografa envelope (Key_1) e valida assinatura da máquina
+    MW->>View: Payload decodificado
+    View->>Actions: obterVotosEleicao(data, user, machine_public_key)
+    Actions->>DB: Busca Election por keyHandle (status CLOSED ou TALLIED)
+    Actions->>Actions: Valida se machine_public_key pertence ao criador da eleição
+    Actions->>DB: Carrega cédulas cifradas (votes), questões/opções e métricas de abstenção
+    Actions-->>View: 200 OK: {keyHandle, machine_fingerprint, titulo, status, total_votos, total_voters, abstention_count, abstention_percentage, votes, questions, nonceClient}
+    View-->>MW: Resposta HTTP 200
+    MW-->>Desktop: Envelope Criptografado com votos cifrados
+
+    Note over Desktop,DB: Etapa 2: Persistência da Apuração Oficial e Abertura da Chave Privada
+    Desktop->>MW: POST /api/election/tally/<br/>(keyHandle, tally_hash, private_key, results, nonceClient, machine_public_key, signature)
+    MW->>MW: Descriptografa envelope (Key_1) e valida assinatura da máquina
+    MW->>View: Payload decodificado
+    View->>Actions: apurarEleicao(data, user, machine_public_key)
+    Actions->>DB: Busca Election por keyHandle com status CLOSED
+    Actions->>Actions: Valida estritamente a máquina física criadora
+    Actions->>Crypto: Carrega private_key (PKCS#8 PEM) e deriva chave pública RSA
+    Actions->>Actions: Verifica se derived_pub_pem == election.public_key
+    Actions->>DB: Transação Atômica: cria Tally(tally_hash, results), salva election.private_key e status = TALLIED
+    Actions-->>View: 200 OK: {keyHandle, machine_fingerprint, titulo, status: TALLIED, tally_id, tally_hash, tally_datetime, results, nonceClient}
+    View-->>MW: Resposta HTTP 200
+    MW-->>Desktop: Envelope Criptografado confirmando a apuração oficial
+```
+
+---
+
+### 14. Download do Pacote Oficial de Auditoria Criptográfica (`GET /api/public/elections/<id>/audit-package/`)
+
+Para qualquer eleição já apurada (`TALLIED`), disponibiliza publicamente um pacote ZIP contendo todos os artefatos criptográficos necessários para auditoria independente e recálculo do `tally_hash`, mantendo tanto o `key_handle` exclusivo da eleição quanto o `machine_fingerprint` não-replicável da máquina que conduziu o pleito.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Auditor as Cidadão / Auditor / Desktop
+    participant View as PublicElectionViewSet (audit_package)
+    participant Actions as ElectionActions.gerarPacoteAuditoria
+    participant DB as Banco de Dados (Election, Vote, Tally, Question)
+
+    Auditor->>View: GET /api/public/elections/<id>/audit-package/
+    View->>Actions: gerarPacoteAuditoria(election_id)
+    Actions->>DB: Busca Election com votes, tallies e questions__options
+    alt Eleição não está TALLIED ou sem private_key
+        Actions-->>View: ValidationError (400 Bad Request)
+    else Eleição TALLIED
+        Actions->>Actions: Calcula/obtém machine_fingerprint (mach_<16_hex>) sem dados replicáveis da máquina
+        Actions->>Actions: Monta dados_eleicao.json (id, title, key_handle, machine_fingerprint, public_key, tally_hash, results, questions)
+        Actions->>Actions: Empacota em memória ZIP (chave_privada.pem, votos_criptografados.json, dados_eleicao.json, LEIAME.txt)
+        Actions-->>View: (zip_bytes, "auditoria_eleicao_<id>.zip")
+        View-->>Auditor: 200 OK (application/zip)
     end
 ```
 

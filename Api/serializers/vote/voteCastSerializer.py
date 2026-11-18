@@ -56,11 +56,8 @@ class VoteCastSerializer(serializers.Serializer):
 class VoteCastResponseSerializer(serializers.Serializer):
     """
     Standardized response structure confirming a deposited ballot.
-    Returns the generated vote receipt, election ID, timestamp, and confirmed status.
+    Returns the election ID, timestamp, and confirmed status without exposing vote IDs.
     """
-    receipt = serializers.CharField(
-        help_text='Anonymous cryptographic vote receipt (id_generated) confirming ballot deposition.'
-    )
     election_id = serializers.IntegerField(
         help_text='Unique identifier of the election.'
     )
@@ -76,10 +73,4 @@ class VoteCastResponseSerializer(serializers.Serializer):
         allow_null=True,
         default=None,
         help_text='Echoed client nonce.'
-    )
-    id_voto = serializers.CharField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text='Echoed exposed vote ID from the ballot package.'
     )

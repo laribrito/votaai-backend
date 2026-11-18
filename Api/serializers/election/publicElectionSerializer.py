@@ -18,7 +18,7 @@ class PublicElectoralCollegeVoterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ElectoralCollege
-        fields = ['id', 'full_name', 'nickname', 'email', 'has_voted']
+        fields = ['id', 'full_name', 'nickname', 'email', 'has_voted', 'voted_at']
         read_only_fields = fields
 
     def get_full_name(self, obj) -> str:
@@ -39,6 +39,7 @@ class PublicElectionListSerializer(serializers.ModelSerializer):
     total_voters = serializers.SerializerMethodField(help_text="Total de eleitores aptos no colegiado eleitoral")
     voted_count = serializers.SerializerMethodField(help_text="Quantidade de votos já registrados")
     quorum_percentage = serializers.SerializerMethodField(help_text="Percentual atual de quórum atingido")
+    abstention_percentage = serializers.SerializerMethodField(help_text="Percentual de abstenção da eleição")
 
     class Meta:
         model = Election
@@ -51,6 +52,7 @@ class PublicElectionListSerializer(serializers.ModelSerializer):
             'total_voters',
             'voted_count',
             'quorum_percentage',
+            'abstention_percentage',
         ]
         read_only_fields = fields
 
@@ -71,6 +73,13 @@ class PublicElectionListSerializer(serializers.ModelSerializer):
             return round((voted / total) * 100, 2)
         return 0.0
 
+    def get_abstention_percentage(self, obj) -> float:
+        total = self.get_total_voters(obj)
+        voted = self.get_voted_count(obj)
+        if total > 0:
+            return round((max(0, total - voted) / total) * 100, 2)
+        return 0.0
+
 
 class PublicElectionDetailSerializer(serializers.ModelSerializer):
     """
@@ -81,7 +90,12 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
     voted_count = serializers.SerializerMethodField(help_text="Quantidade de votos já registrados")
     pending_count = serializers.SerializerMethodField(help_text="Quantidade de eleitores que ainda não votaram")
     quorum_percentage = serializers.SerializerMethodField(help_text="Percentual atual de quórum atingido")
+    abstention_percentage = serializers.SerializerMethodField(help_text="Percentual de abstenção da eleição")
     electoral_college = serializers.SerializerMethodField(help_text="Lista dos eleitores do colegiado eleitoral e status de voto")
+    private_key = serializers.SerializerMethodField(help_text="Chave privada da eleição revelada após a apuração oficial para verificação pública")
+    tallies = serializers.SerializerMethodField(help_text="Histórico das apurações registradas")
+    votes = serializers.SerializerMethodField(help_text="Cédulas cifradas depositadas na urna anônima")
+    tally_results = serializers.SerializerMethodField(help_text="Resultado oficial da apuração com contagem de votos por pergunta e opção")
 
     class Meta:
         model = Election
@@ -95,7 +109,12 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
             'voted_count',
             'pending_count',
             'quorum_percentage',
+            'abstention_percentage',
             'electoral_college',
+            'private_key',
+            'tallies',
+            'votes',
+            'tally_results',
         ]
         read_only_fields = fields
 
@@ -119,6 +138,13 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
         voted = self.get_voted_count(obj)
         if total > 0:
             return round((voted / total) * 100, 2)
+        return 0.0
+
+    def get_abstention_percentage(self, obj) -> float:
+        total = self.get_total_voters(obj)
+        voted = self.get_voted_count(obj)
+        if total > 0:
+            return round((max(0, total - voted) / total) * 100, 2)
         return 0.0
 
     def get_electoral_college(self, obj):
@@ -145,3 +171,95 @@ class PublicElectionDetailSerializer(serializers.ModelSerializer):
         voter_context = dict(self.context)
         voter_context['election'] = obj
         return PublicElectoralCollegeVoterSerializer(voters_qs, many=True, context=voter_context).data
+
+    def get_private_key(self, obj) -> str | None:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return getattr(obj, 'private_key', None)
+        return None
+
+    def get_tallies(self, obj) -> list:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return [
+                {
+                    "id": t.id,
+                    "tally_hash": t.tally_hash,
+                    "tally_datetime": t.tally_datetime.isoformat() if hasattr(t.tally_datetime, 'isoformat') else str(t.tally_datetime)
+                }
+                for t in obj.tallies.all().order_by('-tally_datetime')
+            ]
+        return []
+
+    def get_votes(self, obj) -> list:
+        if getattr(obj, 'status', None) == 'TALLIED':
+            return [
+                {
+                    "id_generated": v.id_generated,
+                    "content": v.content
+                }
+                for v in obj.votes.all().order_by('id')
+            ]
+        return []
+
+    def get_tally_results(self, obj) -> dict | None:
+        if getattr(obj, 'status', None) != 'TALLIED':
+            return None
+        tally = obj.tallies.order_by('-tally_datetime').first()
+        if not tally or not tally.results or not isinstance(tally.results, dict):
+            return None
+
+        results_data = tally.results
+        total_voters = self.get_total_voters(obj)
+        total_ballots = obj.votes.count()
+        abstention_count = max(0, total_voters - total_ballots)
+        abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        # Se já estiver no formato padronizado com lista de questions
+        if "questions" in results_data and isinstance(results_data["questions"], list):
+            return {
+                "tally_hash": tally.tally_hash,
+                "tally_datetime": tally.tally_datetime.isoformat() if hasattr(tally.tally_datetime, 'isoformat') else str(tally.tally_datetime),
+                "total_ballots": results_data.get("total_votos", total_ballots),
+                "total_voters": results_data.get("total_voters", total_voters),
+                "abstention_count": results_data.get("abstention_count", abstention_count),
+                "abstention_percentage": results_data.get("abstention_percentage", abstention_percentage),
+                "questions": results_data["questions"]
+            }
+
+        # Constrói o resultado estruturado a partir do dict legado
+        questions_payload = []
+        for q in obj.questions.all().prefetch_related('options').order_by('order', 'id'):
+            opts_payload = []
+            q_votes_total = 0
+            q_dict = results_data.get(q.question) or results_data.get(str(q.id)) or results_data.get(q.id) or {}
+
+            for opt in q.options.all().order_by('id'):
+                v_count = 0
+                if isinstance(q_dict, dict):
+                    v_count = q_dict.get(opt.label) or q_dict.get(str(opt.id)) or q_dict.get(opt.id) or 0
+                opts_payload.append({
+                    "id": opt.id,
+                    "label": opt.label,
+                    "votes": int(v_count)
+                })
+                q_votes_total += int(v_count)
+
+            for opt_item in opts_payload:
+                pct = round((opt_item["votes"] / q_votes_total) * 100, 2) if q_votes_total > 0 else 0.0
+                opt_item["percentage"] = pct
+
+            questions_payload.append({
+                "id": q.id,
+                "question": q.question,
+                "total_votes": q_votes_total,
+                "options": opts_payload
+            })
+
+        return {
+            "tally_hash": tally.tally_hash,
+            "tally_datetime": tally.tally_datetime.isoformat() if hasattr(tally.tally_datetime, 'isoformat') else str(tally.tally_datetime),
+            "total_ballots": total_ballots,
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage,
+            "questions": questions_payload
+        }

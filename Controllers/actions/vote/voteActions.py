@@ -370,10 +370,11 @@ class VoteActions:
             ballot_ticket.used_at = now
             ballot_ticket.save(update_fields=['is_used', 'used_at'])
 
-        # 10. Consome o token de uso único e marca que o eleitor votou (sem timestamp para evitar correlação)
+        # 10. Consome o token de uso único e marca no colegiado eleitoral que o eleitor votou (com data e hora)
         token_obj.mark_as_used(ip_address=ip_address)
         voter.has_voted = True
-        voter.save(update_fields=['has_voted'])
+        voter.voted_at = now
+        voter.save(update_fields=['has_voted', 'voted_at'])
 
         cache.set(nonce_cache_key, True, timeout=86400)
         if ip_fail_key:
@@ -385,8 +386,6 @@ class VoteActions:
         )
 
         return {
-            "receipt": receipt_id,
-            "id_voto": exposed_id_voto or None,
             "election_id": election.id,
             "deposited_at": now,
             "status": "CONFIRMED",

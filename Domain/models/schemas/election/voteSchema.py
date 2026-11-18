@@ -1,12 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from Core.schemaMixins.timestampSchemaMixin import TimestampSchemaMixin
 from Domain.models.proxies.election.voteProxy import VoteProxy
 
-class Vote(VoteProxy, TimestampSchemaMixin):
+class Vote(VoteProxy, models.Model):
     """
     Domain Model: Encrypted Vote.
-    Stores anonymous, encrypted ballots deposited in an election.
+    Stores anonymous, encrypted ballots deposited in an election without timestamps.
     """
     class Meta:
         verbose_name = _('Vote')

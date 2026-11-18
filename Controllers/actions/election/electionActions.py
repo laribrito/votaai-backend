@@ -1,5 +1,7 @@
+import io
 import json
 import logging
+import zipfile
 from pathlib import Path
 from django.conf import settings
 from django.db import transaction
@@ -13,6 +15,8 @@ from Domain.models.schemas.election.electionSchema import Election, ElectionStat
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.election.tallySchema import Tally
+from Domain.models.schemas.election.voteSchema import Vote
 from Domain.models.schemas.moderation.userSchema import User
 from Infrastructure.services.seCryptoService import SECryptoService
 
@@ -122,6 +126,7 @@ class ElectionActions:
 
         # Normalize public key to PEM format for cross-platform interoperability
         normalized_public_key = SECryptoService.to_pem_public_key(public_key)
+        machine_fingerprint = SECryptoService.get_machine_fingerprint(norm_machine_pub_key)
 
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():
@@ -130,10 +135,16 @@ class ElectionActions:
                     "creator": _("Could not identify the authenticated user or physical machine owner to create the election.")
                 })
 
+            if Election.objects.filter(key_handle=key_handle).exists():
+                raise ValidationError({
+                    "key_handle": _("An election with this keyHandle already exists.")
+                })
+
             election = Election.objects.create(
                 title=title,
                 public_key=normalized_public_key,
                 key_handle=key_handle,
+                machine_fingerprint=machine_fingerprint,
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,
                 machine_signature=machine_signature,
@@ -315,11 +326,13 @@ class ElectionActions:
                 ),
                 "nickname": voter.nickname,
                 "email": voter.email,
-                "has_voted": voter.has_voted
+                "has_voted": voter.has_voted,
+                "voted_at": voter.voted_at.isoformat() if voter.voted_at and hasattr(voter.voted_at, 'isoformat') else voter.voted_at
             }
             for voter in voters_qs
         ]
 
+        is_tallied = election.status == ElectionStatus.TALLIED
         return {
             "id": election.id,
             "title": election.title,
@@ -330,7 +343,21 @@ class ElectionActions:
             "voted_count": voted_count,
             "pending_count": pending_count,
             "quorum_percentage": quorum_percentage,
-            "electoral_college": voters_data
+            "electoral_college": voters_data,
+            "private_key": election.private_key if is_tallied else None,
+            "tallies": [
+                {
+                    "id": t.id,
+                    "tally_hash": t.tally_hash,
+                    "tally_datetime": t.tally_datetime.isoformat() if hasattr(t.tally_datetime, 'isoformat') else str(t.tally_datetime)
+                } for t in election.tallies.all().order_by('-tally_datetime')
+            ] if is_tallied else [],
+            "votes": [
+                {
+                    "id_generated": v.id_generated,
+                    "content": v.content
+                } for v in election.votes.all().order_by('id')
+            ] if is_tallied else []
         }
 
     @classmethod
@@ -417,8 +444,15 @@ class ElectionActions:
         pending_count = max(0, total_voters - voted_count)
         quorum_percentage = round((voted_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
 
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
         result = {
             "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
             "titulo": election.title,
             "status": election.status,
             "hora_registrada": election.end_datetime.isoformat(),
@@ -440,3 +474,394 @@ class ElectionActions:
             result["nonceClient"] = nonce_client
 
         return result
+
+    @classmethod
+    def obterVotosEleicao(
+        cls,
+        data: dict,
+        user: User | None = None,
+        machine_public_key: str | None = None
+    ) -> dict:
+        """
+        Retorna as cédulas cifradas de uma eleição encerrada (CLOSED) ou já apurada (TALLIED).
+        Caso a eleição esteja em CLOSED (antes da apuração inicial), apenas a máquina física
+        criadora autorizada pode resgatar os votos para realizar a primeira apuração soberana.
+        """
+        key_handle = data.get("keyHandle") or data.get("key_handle") or data.get("id")
+        nonce_client = (
+            data.get("nonceClient")
+            or data.get("nonceClient3")
+            or data.get("nonceClient2")
+            or data.get("nonce")
+        )
+
+        if not key_handle:
+            raise ValidationError({"keyHandle": _("The election key handle is required.")})
+
+        # 1. Localiza a eleição
+        if isinstance(key_handle, int) or (isinstance(key_handle, str) and key_handle.isdigit()):
+            election = Election.objects.filter(id=int(key_handle)).first()
+        else:
+            election = Election.objects.filter(key_handle=key_handle).order_by('-created_at').first()
+
+        if not election:
+            raise Election.DoesNotExist(_("Election not found."))
+
+        # 2. Valida o status da eleição
+        if election.status not in (ElectionStatus.CLOSED, ElectionStatus.TALLIED):
+            raise ValidationError({
+                "election": _("Votes can only be retrieved for closed or tallied elections.")
+            })
+
+        # 3. Se a eleição está apenas CLOSED, restringe à máquina física/administrador criador
+        if election.status == ElectionStatus.CLOSED:
+            norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
+            creator = election.created_by
+            if creator:
+                if user and user.id != creator.id:
+                    raise PermissionDenied(_("Only the administrator that created this election can retrieve votes for tallying."))
+                if norm_machine_key and creator.machine_public_key:
+                    norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+                    if norm_machine_key.strip() != norm_creator_key.strip():
+                        raise PermissionDenied(_("Only the physical machine that created this election can retrieve votes for tallying."))
+
+        # 4. Busca os votos da urna
+        votes_qs = election.votes.all().order_by('id')
+        votes_data = [
+            {
+                "id_generated": vote.id_generated,
+                "content": vote.content
+            }
+            for vote in votes_qs
+        ]
+
+        # 5. Estrutura descritiva das perguntas e opções para apuração legível
+        questions_qs = election.questions.all().prefetch_related('options').order_by('order', 'id')
+        questions_data = [
+            {
+                "id": q.id,
+                "question": q.question,
+                "order": q.order,
+                "options": [
+                    {"id": opt.id, "label": opt.label}
+                    for opt in q.options.all().order_by('id')
+                ]
+            }
+            for q in questions_qs
+        ]
+
+        total_voters = election.electoral_college.count()
+        total_votos = len(votes_data)
+        abstention_count = max(0, total_voters - total_votos)
+        abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
+        result = {
+            "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
+            "titulo": election.title,
+            "status": election.status,
+            "total_votos": total_votos,
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage,
+            "votes": votes_data,
+            "questions": questions_data
+        }
+        if nonce_client:
+            result["nonceClient"] = nonce_client
+
+        return result
+
+    @classmethod
+    def apurarEleicao(
+        cls,
+        data: dict,
+        user: User | None = None,
+        machine_public_key: str | None = None
+    ) -> dict:
+        """
+        Salva a primeira apuração oficial e registra a chave privada da eleição no servidor.
+        - Exige que a eleição esteja com status CLOSED.
+        - Só pode ser gerada e enviada pela máquina desktop física autenticada que criou a eleição.
+        - Valida matematicamente se a chave privada enviada deriva a chave pública da eleição.
+        - Salva o registro de Tally (tally_hash) e persiste election.private_key.
+        - Transiciona o status atômico para TALLIED, abrindo a eleição para apuração pública por qualquer pessoa.
+        """
+        key_handle = data.get("keyHandle") or data.get("key_handle") or data.get("id")
+        tally_hash = data.get("tally_hash")
+        private_key_pem = data.get("private_key")
+        results = data.get("results")
+        nonce_client = (
+            data.get("nonceClient")
+            or data.get("nonceClient3")
+            or data.get("nonceClient2")
+            or data.get("nonce")
+        )
+
+        if not key_handle:
+            raise ValidationError({"keyHandle": _("The election key handle is required.")})
+        if not tally_hash:
+            raise ValidationError({"tally_hash": _("The tally cryptographic hash is required.")})
+        if not private_key_pem:
+            raise ValidationError({"private_key": _("The election private key is required for tally verification.")})
+        if not results or not isinstance(results, dict):
+            raise ValidationError({"results": _("The tally results are required and cannot be empty.")})
+
+        # 1. Localiza a eleição
+        if isinstance(key_handle, int) or (isinstance(key_handle, str) and key_handle.isdigit()):
+            election = Election.objects.filter(id=int(key_handle)).first()
+        else:
+            election = Election.objects.filter(key_handle=key_handle).order_by('-created_at').first()
+
+        if not election:
+            raise Election.DoesNotExist(_("Election not found."))
+
+        # 2. Valida o status da eleição
+        if election.status == ElectionStatus.TALLIED:
+            raise ValidationError({"election": _("This election has already been tallied.")})
+        if election.status == ElectionStatus.STARTED:
+            raise ValidationError({"election": _("Cannot tally an election while voting is still in progress. Close it first.")})
+        if election.status == ElectionStatus.CREATED:
+            raise ValidationError({"election": _("Cannot tally an election that has not been started.")})
+        if election.status != ElectionStatus.CLOSED:
+            raise ValidationError({"election": _("Election is not in a closed state.")})
+
+        # 3. Validação estrita do Desktop Autenticado (Apenas máquina criadora autorizada)
+        norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
+        creator = election.created_by
+        if creator:
+            if user and user.id != creator.id:
+                raise PermissionDenied(_("Only the administrator that created this election can tally it."))
+            if norm_machine_key and creator.machine_public_key:
+                norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+                if norm_machine_key.strip() != norm_creator_key.strip():
+                    raise PermissionDenied(_("Only the authenticated physical machine that created this election can tally it."))
+
+        # 4. Validação criptográfica da Chave Privada da Eleição
+        try:
+            priv_bytes = private_key_pem.encode('utf-8') if isinstance(private_key_pem, str) else private_key_pem
+            loaded_priv_key = serialization.load_pem_private_key(priv_bytes, password=None)
+        except Exception:
+            raise ValidationError({"private_key": _("Invalid private key format. PEM PKCS#8 expected.")})
+
+        derived_pub_pem = loaded_priv_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+
+        normalized_election_pub = SECryptoService.to_pem_public_key(election.public_key)
+        if not normalized_election_pub or derived_pub_pem.strip() != normalized_election_pub.strip():
+            raise ValidationError({
+                "private_key": _("The provided private key does not match the election's public key.")
+            })
+
+        election_questions = election.questions.all().prefetch_related('options').order_by('order', 'id')
+        total_voters = election.electoral_college.count()
+        total_votos = election.votes.count()
+        abstention_count = max(0, total_voters - total_votos)
+        abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
+
+        # Normaliza a estrutura de questões em results
+        structured_questions = results.get("questions")
+        if not isinstance(structured_questions, list) or len(structured_questions) == 0:
+            summary = results.get("summary") if isinstance(results.get("summary"), dict) else results
+            built_questions = []
+            for q in election_questions:
+                q_dict = summary.get(q.question) or summary.get(str(q.id)) or summary.get(q.id) or {}
+                opts_payload = []
+                q_total = 0
+                for opt in q.options.all().order_by('id'):
+                    v_count = 0
+                    if isinstance(q_dict, dict):
+                        v_count = q_dict.get(opt.label) or q_dict.get(str(opt.id)) or q_dict.get(opt.id) or 0
+                    opts_payload.append({
+                        "id": opt.id,
+                        "label": opt.label,
+                        "votes": int(v_count)
+                    })
+                    q_total += int(v_count)
+
+                for opt_item in opts_payload:
+                    opt_item["percentage"] = round((opt_item["votes"] / q_total) * 100, 2) if q_total > 0 else 0.0
+
+                built_questions.append({
+                    "id": q.id,
+                    "question": q.question,
+                    "total_votes": q_total,
+                    "options": opts_payload
+                })
+            structured_questions = built_questions
+
+        # Validação de integridade estrita:
+        # Se a eleição possui cédulas na urna, a apuração NÃO pode ter contagem zerada
+        total_counted_votes = sum(
+            sum(opt.get("votes", 0) for opt in q.get("options", []))
+            for q in structured_questions
+            if isinstance(q, dict)
+        )
+        if total_votos > 0 and election_questions.exists() and total_counted_votes == 0:
+            raise ValidationError({
+                "results": _("The tally results cannot be zeroed out when ballots exist in the election.")
+            })
+
+        normalized_results = {
+            "summary": results.get("summary", {}),
+            "questions": structured_questions,
+            "total_votos": total_votos,
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage
+        }
+
+        # 5. Persistência atômica do Tally e atualização de estado
+        with transaction.atomic():
+            tally = Tally.objects.create(
+                election=election,
+                tally_hash=str(tally_hash).strip(),
+                tally_datetime=timezone.now(),
+                results=normalized_results
+            )
+            election.private_key = private_key_pem.strip()
+            election.status = ElectionStatus.TALLIED
+            election.save(update_fields=['private_key', 'status', 'updated_at'])
+
+        logger.info(
+            f"[ELECTION_TALLIED] Eleição #{election.id} ('{election.title}') apurada com sucesso. "
+            f"Tally #{tally.id} (hash: {tally.tally_hash[:16]}...). Chave privada liberada para auditoria pública."
+        )
+
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
+        result = {
+            "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
+            "titulo": election.title,
+            "status": election.status,
+            "tally_id": tally.id,
+            "tally_hash": tally.tally_hash,
+            "tally_datetime": tally.tally_datetime.isoformat(),
+            "total_voters": total_voters,
+            "abstention_count": abstention_count,
+            "abstention_percentage": abstention_percentage,
+            "mensagem": str(_("Election tally saved successfully. Private key recorded for public verification."))
+        }
+
+        if results:
+            result["results"] = results
+        if nonce_client:
+            result["nonceClient"] = nonce_client
+
+        return result
+
+    @classmethod
+    def gerarPacoteAuditoria(cls, election_id: int) -> tuple[bytes, str]:
+        """
+        Gera o pacote ZIP oficial para auditoria de uma eleição apurada (TALLIED).
+        Contém a chave privada da eleição em PEM e todos os votos criptografados.
+        Retorna uma tupla (zip_bytes, filename).
+        """
+        try:
+            election = Election.objects.prefetch_related('votes', 'tallies', 'questions__options').get(pk=election_id)
+        except Election.DoesNotExist:
+            raise Election.DoesNotExist(str(_("Election not found.")))
+
+        if election.status != ElectionStatus.TALLIED:
+            raise ValidationError({
+                "election": str(_("Audit packages are only available for tallied elections (TALLIED)."))
+            })
+
+        if not election.private_key:
+            raise ValidationError({
+                "private_key": str(_("The private key for this election is not available."))
+            })
+
+        votes_qs = election.votes.all().order_by('id')
+        votes_data = [
+            {
+                "id_generated": v.id_generated,
+                "content": v.content,
+            }
+            for v in votes_qs
+        ]
+
+        tally = election.tallies.order_by('-tally_datetime').first()
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
+        election_meta = {
+            "id": election.id,
+            "title": election.title,
+            "key_handle": election.key_handle,
+            "machine_fingerprint": machine_fp,
+            "status": election.status,
+            "start_datetime": election.start_datetime.isoformat() if election.start_datetime else None,
+            "end_datetime": election.end_datetime.isoformat() if election.end_datetime else None,
+            "public_key": election.public_key,
+            "total_voters": election.electoral_college.count(),
+            "total_votes": len(votes_data),
+            "tally_hash": tally.tally_hash if tally else None,
+            "tally_datetime": tally.tally_datetime.isoformat() if (tally and tally.tally_datetime) else None,
+            "results": tally.results if tally else None,
+            "questions": [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "order": q.order,
+                    "options": [
+                        {"id": opt.id, "label": opt.label}
+                        for opt in q.options.all().order_by('id')
+                    ]
+                }
+                for q in election.questions.all().order_by('order', 'id')
+            ]
+        }
+
+        readme_text = (
+            f"==========================================================\n"
+            f"VOTA AÍ - PACOTE OFICIAL DE AUDITORIA CRIPTOGRÁFICA\n"
+            f"==========================================================\n\n"
+            f"Eleição: {election.title} (ID #{election.id})\n"
+            f"Handle da Eleição (key_handle): {election.key_handle}\n"
+            f"Fingerprint da Máquina (machine_fingerprint): {machine_fp or 'N/A'}\n"
+            f"Status: {election.status}\n"
+            f"Hash de Apuração Oficial (SHA-256): {tally.tally_hash if tally else 'N/A'}\n"
+            f"Total de Cédulas Cifradas: {len(votes_data)}\n\n"
+            f"ARQUIVOS INCLUÍDOS:\n"
+            f"1. chave_privada.pem: Chave privada da eleição utilizada para decifrar as cédulas.\n"
+            f"2. votos_criptografados.json: Lista contendo todas as cédulas cifradas originais.\n"
+            f"3. dados_eleicao.json: Metadados, questões e resultado canônico da eleição.\n\n"
+            f"COMO AUDITAR NO APLICATIVO DESKTOP:\n"
+            f"Importe este pacote no aplicativo desktop do Vota Aí na seção de Auditoria\n"
+            f"para decifrar os votos, recalcular a apuração de forma soberana e conferir\n"
+            f"a integridade matemática do pleito através do hash oficial.\n"
+        )
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            priv_content = election.private_key.strip() + '\n'
+            zip_file.writestr('chave_privada.pem', priv_content)
+
+            votes_json = json.dumps(votes_data, indent=2, ensure_ascii=False)
+            zip_file.writestr('votos_criptografados.json', votes_json)
+
+            meta_json = json.dumps(election_meta, indent=2, ensure_ascii=False)
+            zip_file.writestr('dados_eleicao.json', meta_json)
+
+            zip_file.writestr('LEIAME.txt', readme_text)
+
+        buffer.seek(0)
+        filename = f"auditoria_eleicao_{election.id}.zip"
+        return buffer.getvalue(), filename
