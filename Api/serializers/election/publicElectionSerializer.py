@@ -18,7 +18,7 @@ class PublicElectoralCollegeVoterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ElectoralCollege
-        fields = ['id', 'full_name', 'nickname', 'email', 'has_voted']
+        fields = ['id', 'full_name', 'nickname', 'email', 'has_voted', 'voted_at']
         read_only_fields = fields
 
     def get_full_name(self, obj) -> str:

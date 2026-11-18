@@ -326,7 +326,8 @@ class ElectionActions:
                 ),
                 "nickname": voter.nickname,
                 "email": voter.email,
-                "has_voted": voter.has_voted
+                "has_voted": voter.has_voted,
+                "voted_at": voter.voted_at.isoformat() if voter.voted_at and hasattr(voter.voted_at, 'isoformat') else voter.voted_at
             }
             for voter in voters_qs
         ]

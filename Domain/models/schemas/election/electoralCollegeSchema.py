@@ -47,6 +47,12 @@ class ElectoralCollege(ElectoralCollegeProxy, models.Model):
         default=False,
         help_text=_('Indicates whether this voter has already cast their ballot')
     )
+    voted_at = models.DateTimeField(
+        _('voted at'),
+        null=True,
+        blank=True,
+        help_text=_('Timestamp when this voter cast their ballot')
+    )
     email_sent = models.BooleanField(
         _('email sent'),
         default=False,
