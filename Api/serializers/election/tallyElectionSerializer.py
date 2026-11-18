@@ -19,7 +19,12 @@ class TallyVotesRequestSerializer(serializers.Serializer):
 
 class TallyVotesResponseSerializer(serializers.Serializer):
     """Resposta contendo a lista de votos cifrados para apuração soberana."""
-    keyHandle = serializers.CharField(help_text="Handle da eleição")
+    keyHandle = serializers.CharField(help_text="Handle único da eleição")
+    machine_fingerprint = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Identificador público não-replicável (fingerprint SHA-256) da máquina criadora"
+    )
     titulo = serializers.CharField(help_text="Título da eleição")
     status = serializers.CharField(help_text="Status da eleição (CLOSED ou TALLIED)")
     total_votos = serializers.IntegerField(help_text="Quantidade total de votos registrados na urna")
@@ -69,7 +74,12 @@ class TallyElectionRequestSerializer(serializers.Serializer):
 
 class TallyElectionResponseSerializer(serializers.Serializer):
     """Resposta da primeira apuração confirmando a persistência oficial."""
-    keyHandle = serializers.CharField(help_text="Handle da eleição")
+    keyHandle = serializers.CharField(help_text="Handle único da eleição")
+    machine_fingerprint = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Identificador público não-replicável (fingerprint SHA-256) da máquina criadora"
+    )
     titulo = serializers.CharField(help_text="Título da eleição")
     status = serializers.CharField(help_text="Novo status da eleição (TALLIED)")
     tally_id = serializers.IntegerField(help_text="Identificador do registro de apuração criado")

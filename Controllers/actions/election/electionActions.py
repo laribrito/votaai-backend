@@ -1,5 +1,7 @@
+import io
 import json
 import logging
+import zipfile
 from pathlib import Path
 from django.conf import settings
 from django.db import transaction
@@ -124,6 +126,7 @@ class ElectionActions:
 
         # Normalize public key to PEM format for cross-platform interoperability
         normalized_public_key = SECryptoService.to_pem_public_key(public_key)
+        machine_fingerprint = SECryptoService.get_machine_fingerprint(norm_machine_pub_key)
 
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():
@@ -132,10 +135,16 @@ class ElectionActions:
                     "creator": _("Could not identify the authenticated user or physical machine owner to create the election.")
                 })
 
+            if Election.objects.filter(key_handle=key_handle).exists():
+                raise ValidationError({
+                    "key_handle": _("An election with this keyHandle already exists.")
+                })
+
             election = Election.objects.create(
                 title=title,
                 public_key=normalized_public_key,
                 key_handle=key_handle,
+                machine_fingerprint=machine_fingerprint,
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,
                 machine_signature=machine_signature,
@@ -434,8 +443,15 @@ class ElectionActions:
         pending_count = max(0, total_voters - voted_count)
         quorum_percentage = round((voted_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
 
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
         result = {
             "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
             "titulo": election.title,
             "status": election.status,
             "hora_registrada": election.end_datetime.isoformat(),
@@ -538,8 +554,15 @@ class ElectionActions:
         abstention_count = max(0, total_voters - total_votos)
         abstention_percentage = round((abstention_count / total_voters) * 100, 2) if total_voters > 0 else 0.0
 
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
         result = {
             "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
             "titulo": election.title,
             "status": election.status,
             "total_votos": total_votos,
@@ -712,8 +735,15 @@ class ElectionActions:
             f"Tally #{tally.id} (hash: {tally.tally_hash[:16]}...). Chave privada liberada para auditoria pública."
         )
 
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
         result = {
             "keyHandle": election.key_handle,
+            "machine_fingerprint": machine_fp,
             "titulo": election.title,
             "status": election.status,
             "tally_id": tally.id,
@@ -731,3 +761,106 @@ class ElectionActions:
             result["nonceClient"] = nonce_client
 
         return result
+
+    @classmethod
+    def gerarPacoteAuditoria(cls, election_id: int) -> tuple[bytes, str]:
+        """
+        Gera o pacote ZIP oficial para auditoria de uma eleição apurada (TALLIED).
+        Contém a chave privada da eleição em PEM e todos os votos criptografados.
+        Retorna uma tupla (zip_bytes, filename).
+        """
+        try:
+            election = Election.objects.prefetch_related('votes', 'tallies', 'questions__options').get(pk=election_id)
+        except Election.DoesNotExist:
+            raise Election.DoesNotExist(str(_("Election not found.")))
+
+        if election.status != ElectionStatus.TALLIED:
+            raise ValidationError({
+                "election": str(_("Audit packages are only available for tallied elections (TALLIED)."))
+            })
+
+        if not election.private_key:
+            raise ValidationError({
+                "private_key": str(_("The private key for this election is not available."))
+            })
+
+        votes_qs = election.votes.all().order_by('id')
+        votes_data = [
+            {
+                "id_generated": v.id_generated,
+                "content": v.content,
+            }
+            for v in votes_qs
+        ]
+
+        tally = election.tallies.order_by('-tally_datetime').first()
+        machine_fp = election.machine_fingerprint or (
+            SECryptoService.get_machine_fingerprint(election.created_by.machine_public_key)
+            if election.created_by and getattr(election.created_by, 'machine_public_key', None)
+            else ""
+        )
+
+        election_meta = {
+            "id": election.id,
+            "title": election.title,
+            "key_handle": election.key_handle,
+            "machine_fingerprint": machine_fp,
+            "status": election.status,
+            "start_datetime": election.start_datetime.isoformat() if election.start_datetime else None,
+            "end_datetime": election.end_datetime.isoformat() if election.end_datetime else None,
+            "public_key": election.public_key,
+            "total_voters": election.electoral_college.count(),
+            "total_votes": len(votes_data),
+            "tally_hash": tally.tally_hash if tally else None,
+            "tally_datetime": tally.tally_datetime.isoformat() if (tally and tally.tally_datetime) else None,
+            "results": tally.results if tally else None,
+            "questions": [
+                {
+                    "id": q.id,
+                    "question": q.question,
+                    "order": q.order,
+                    "options": [
+                        {"id": opt.id, "label": opt.label}
+                        for opt in q.options.all().order_by('id')
+                    ]
+                }
+                for q in election.questions.all().order_by('order', 'id')
+            ]
+        }
+
+        readme_text = (
+            f"==========================================================\n"
+            f"VOTA AÍ - PACOTE OFICIAL DE AUDITORIA CRIPTOGRÁFICA\n"
+            f"==========================================================\n\n"
+            f"Eleição: {election.title} (ID #{election.id})\n"
+            f"Handle da Eleição (key_handle): {election.key_handle}\n"
+            f"Fingerprint da Máquina (machine_fingerprint): {machine_fp or 'N/A'}\n"
+            f"Status: {election.status}\n"
+            f"Hash de Apuração Oficial (SHA-256): {tally.tally_hash if tally else 'N/A'}\n"
+            f"Total de Cédulas Cifradas: {len(votes_data)}\n\n"
+            f"ARQUIVOS INCLUÍDOS:\n"
+            f"1. chave_privada.pem: Chave privada da eleição utilizada para decifrar as cédulas.\n"
+            f"2. votos_criptografados.json: Lista contendo todas as cédulas cifradas originais.\n"
+            f"3. dados_eleicao.json: Metadados, questões e resultado canônico da eleição.\n\n"
+            f"COMO AUDITAR NO APLICATIVO DESKTOP:\n"
+            f"Importe este pacote no aplicativo desktop do Vota Aí na seção de Auditoria\n"
+            f"para decifrar os votos, recalcular a apuração de forma soberana e conferir\n"
+            f"a integridade matemática do pleito através do hash oficial.\n"
+        )
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            priv_content = election.private_key.strip() + '\n'
+            zip_file.writestr('chave_privada.pem', priv_content)
+
+            votes_json = json.dumps(votes_data, indent=2, ensure_ascii=False)
+            zip_file.writestr('votos_criptografados.json', votes_json)
+
+            meta_json = json.dumps(election_meta, indent=2, ensure_ascii=False)
+            zip_file.writestr('dados_eleicao.json', meta_json)
+
+            zip_file.writestr('LEIAME.txt', readme_text)
+
+        buffer.seek(0)
+        filename = f"auditoria_eleicao_{election.id}.zip"
+        return buffer.getvalue(), filename
