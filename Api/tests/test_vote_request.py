@@ -385,7 +385,7 @@ class VoteRequestViewTests(APITestCase):
         res_blocked = self.client.post(self.url, data=self._encrypt_request_body(payload), format='json')
         self.assertEqual(res_blocked.status_code, status.HTTP_400_BAD_REQUEST)
         data = self._decrypt_response_body(res_blocked)
-        self.assertIn("blocked", str(data.get("token")).lower())
+        self.assertIn("bloqueado", str(data.get("token")).lower())
 
     def test_vote_request_tee_level_accepted(self):
         """
