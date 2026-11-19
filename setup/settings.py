@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import timedelta
 import sys
 from decouple import config, Csv
+from django.utils.translation import gettext_lazy as _
 
 # Caminho base do projeto
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -77,6 +78,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Servidor eficiente de arquivos estáticos em produção
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'Infrastructure.middlewares.seDecryptMiddleware.SEDecryptMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -134,11 +136,20 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internacionalização
 LANGUAGE_CODE = 'pt-br'
 
+LANGUAGES = [
+    ('pt-br', _('Português (Brasil)')),
+    ('en', _('English')),
+]
+
 TIME_ZONE = 'America/Sao_Paulo'
 
 USE_I18N = True
 
 USE_TZ = True
+
+LOCALE_PATHS = [
+    BASE_DIR / 'locale',
+]
 
 # Arquivos estáticos (CSS, JavaScript, Imagens)
 STATIC_URL = 'static/'

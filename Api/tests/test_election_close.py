@@ -333,7 +333,7 @@ class ElectionCloseTests(APITestCase):
                 "nonce": "attempt_nonce",
                 "attestation_certificates": []
             })
-        self.assertIn("closed", str(ctx.exception))
+        self.assertIn("encerrada", str(ctx.exception).lower())
 
     def test_tracking_endpoint_reflects_closed_status_immediately(self):
         """A rota de acompanhamento público deve refletir imediatamente o status CLOSED e quórum final."""

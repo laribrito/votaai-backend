@@ -1,0 +1,1188 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-18 16:14-0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:11
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:38
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:69
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:95
+#: Controllers/actions/admin/adminPreRegistrationActions.py:98
+#: Controllers/actions/admin/adminPreRegistrationActions.py:167
+msgid "Email is required."
+msgstr "O e-mail é obrigatório."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:17
+#: Infrastructure/validators/passwordValidator.py:65
+msgid "Password is required."
+msgstr "A senha é obrigatória."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:21
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:52
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:78
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:109
+#: Controllers/actions/admin/adminPreRegistrationActions.py:177
+#: Controllers/actions/election/electionActions.py:106
+msgid "Machine public key is required."
+msgstr "A chave pública da máquina é obrigatória."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:27
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:58
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:84
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:115
+#: Controllers/actions/admin/adminPreRegistrationActions.py:187
+msgid "Device ID is required."
+msgstr "O ID do dispositivo é obrigatório."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:43
+#: Controllers/actions/admin/adminPreRegistrationActions.py:255
+msgid "Verification code is required."
+msgstr "O código de verificação é obrigatório."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:47
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:73
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:104
+msgid "Machine digital signature is required."
+msgstr "A assinatura digital da máquina é obrigatória."
+
+#: Api/serializers/admin/adminPreRegistrationSerializer.py:100
+#: Controllers/actions/admin/adminPreRegistrationActions.py:341
+msgid "TOTP code is required."
+msgstr "O código TOTP é obrigatório."
+
+#: Api/serializers/election/closeElectionSerializer.py:9
+msgid "Mensagem de controle (ex: CLOSE_ELECTION)"
+msgstr "Mensagem de controle (ex: CLOSE_ELECTION)"
+
+#: Api/serializers/election/closeElectionSerializer.py:13
+msgid "Identificador da chave de hardware da eleição no TPM"
+msgstr "Identificador da chave de hardware da eleição no TPM"
+
+#: Api/serializers/election/closeElectionSerializer.py:17
+msgid ""
+"Assinatura digital do payload canônico gerada pela chave privada da eleição"
+msgstr "Assinatura digital do payload canônico gerada pela chave privada da eleição"
+
+#: Api/serializers/election/closeElectionSerializer.py:21
+msgid "Nonce anti-replay da requisição do cliente desktop"
+msgstr "Nonce anti-replay da requisição do cliente desktop"
+
+#: Api/serializers/election/closeElectionSerializer.py:25
+msgid "Nonce alternativo anti-replay do cliente desktop"
+msgstr "Nonce alternativo anti-replay do cliente desktop"
+
+#: Api/serializers/election/closeElectionSerializer.py:29
+msgid "Chave pública da máquina administradora em formato PEM"
+msgstr "Chave pública da máquina administradora em formato PEM"
+
+#: Api/serializers/election/closeElectionSerializer.py:34
+msgid "Key handle da eleição"
+msgstr "Key handle da eleição"
+
+#: Api/serializers/election/closeElectionSerializer.py:35
+msgid "Título da eleição"
+msgstr "Título da eleição"
+
+#: Api/serializers/election/closeElectionSerializer.py:36
+msgid "Status atualizado (CLOSED)"
+msgstr "Status atualizado (CLOSED)"
+
+#: Api/serializers/election/closeElectionSerializer.py:37
+msgid "Data e hora do encerramento (end_datetime)"
+msgstr "Data e hora do encerramento (end_datetime)"
+
+#: Api/serializers/election/closeElectionSerializer.py:38
+msgid "Total de eleitores aptos no colégio eleitoral"
+msgstr "Total de eleitores aptos no colégio eleitoral"
+
+#: Api/serializers/election/closeElectionSerializer.py:39
+msgid "Quantidade de votos depositados na urna"
+msgstr "Quantidade de votos depositados na urna"
+
+#: Api/serializers/election/closeElectionSerializer.py:40
+msgid "Quantidade de eleitores que não votaram"
+msgstr "Quantidade de eleitores que não votaram"
+
+#: Api/serializers/election/closeElectionSerializer.py:41
+msgid "Percentual final do quórum de participação"
+msgstr "Percentual final do quórum de participação"
+
+#: Api/serializers/election/closeElectionSerializer.py:42
+msgid "Mensagem de confirmação"
+msgstr "Mensagem de confirmação"
+
+#: Api/serializers/election/closeElectionSerializer.py:43
+#: Api/serializers/election/closeElectionSerializer.py:44
+msgid "Nonce ecoado do cliente"
+msgstr "Nonce ecoado do cliente"
+
+#: Api/views/election/availableElectionsView.py:75
+msgid "Failed to process available elections request."
+msgstr "Falha ao processar a solicitação de eleições disponíveis."
+
+#: Api/views/election/closeElectionView.py:61
+#: Api/views/election/startElectionView.py:84
+#: Api/views/election/tallyElectionView.py:63
+#: Api/views/election/tallyElectionView.py:139
+#: Controllers/actions/election/electionActions.py:291
+#: Controllers/actions/election/electionActions.py:396
+#: Controllers/actions/election/electionActions.py:508
+#: Controllers/actions/election/electionActions.py:623
+#: Controllers/actions/election/electionActions.py:776
+msgid "Election not found."
+msgstr "Eleição não encontrada."
+
+#: Api/views/election/closeElectionView.py:75
+msgid "Failed to close election."
+msgstr "Falha ao encerrar a eleição."
+
+#: Api/views/election/closeElectionView.py:84
+msgid "An unexpected error occurred while closing the election."
+msgstr "Ocorreu um erro inesperado ao encerrar a eleição."
+
+#: Api/views/election/startElectionView.py:35
+#: Controllers/actions/election/electionActions.py:391
+msgid "Election signature is missing."
+msgstr "A assinatura da eleição está ausente."
+
+#: Api/views/election/startElectionView.py:54
+#: Controllers/actions/election/electionActions.py:433
+msgid "Invalid election signature. Possible spoofing attempt."
+msgstr "Assinatura da eleição inválida. Possível tentativa de falsificação."
+
+#: Api/views/election/startElectionView.py:89
+msgid "Failed to start election."
+msgstr "Falha ao iniciar a eleição."
+
+#: Api/views/election/tallyElectionView.py:77
+msgid "Failed to retrieve election votes."
+msgstr "Falha ao recuperar os votos da eleição."
+
+#: Api/views/election/tallyElectionView.py:86
+msgid "An unexpected error occurred while retrieving election votes."
+msgstr "Ocorreu um erro inesperado ao recuperar os votos da eleição."
+
+#: Api/views/election/tallyElectionView.py:153
+msgid "Failed to save election tally."
+msgstr "Falha ao salvar a apuração da eleição."
+
+#: Api/views/election/tallyElectionView.py:162
+msgid "An unexpected error occurred while saving election tally."
+msgstr "Ocorreu um erro inesperado ao salvar a apuração da eleição."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:61
+msgid "VotaAI - Verificação de e-mail do gestor da máquina"
+msgstr "VotaAI - Verificação de e-mail do gestor da máquina"
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:83
+msgid "Failed to send verification email. Please try again."
+msgstr "Falha ao enviar o e-mail de verificação. Tente novamente."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:100
+msgid "Machine signature is required."
+msgstr "A assinatura da máquina é obrigatória."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:104
+msgid "User not found."
+msgstr "Usuário não encontrado."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:107
+#: Controllers/actions/admin/adminPreRegistrationActions.py:171
+msgid "This email is already registered and active in the system."
+msgstr "Este e-mail já está cadastrado e ativo no sistema."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:110
+msgid "No machine linked to this user."
+msgstr "Nenhuma máquina vinculada a este usuário."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:115
+msgid "This device does not match the one linked during pre-registration."
+msgstr "Este dispositivo não corresponde ao vinculado durante o pré-cadastro."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:124
+#, python-format
+msgid ""
+"This machine (%(device_id)s) has already been activated by another user "
+"(%(email)s)."
+msgstr "Esta máquina (%(device_id)s) já foi ativada por outro usuário (%(email)s)."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:136
+#, python-format
+msgid "This machine has already been activated by another user (%(email)s)."
+msgstr "Esta máquina já foi ativada por outro usuário (%(email)s)."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:147
+msgid "Invalid machine signature or unauthorized key."
+msgstr "Assinatura da máquina inválida ou chave não autorizada."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:182
+#: Controllers/actions/vote/voteActions.py:135
+#, python-format
+msgid "Invalid machine public key: %(error)s"
+msgstr "Chave pública da máquina inválida: %(error)s"
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:195
+#, python-format
+msgid ""
+"This machine (%(device_id)s) is already linked to another active user "
+"(%(email)s)."
+msgstr "Esta máquina (%(device_id)s) já está vinculada a outro usuário ativo (%(email)s)."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:207
+#, python-format
+msgid "This public key is already linked to another active user (%(email)s)."
+msgstr "Esta chave pública já está vinculada a outro usuário ativo (%(email)s)."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:236
+msgid ""
+"Pre-registration started successfully. A verification code has been sent to "
+"your email."
+msgstr "Pré-cadastro iniciado com sucesso. Um código de verificação foi enviado para o seu e-mail."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:261
+msgid "No pending email verification found. Please restart pre-registration."
+msgstr "Nenhuma verificação de e-mail pendente encontrada. Reinicie o pré-cadastro."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:266
+msgid "Verification code has expired. Please request a new code."
+msgstr "O código de verificação expirou. Solicite um novo código."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:271
+msgid "Too many failed verification attempts. Please request a new code."
+msgstr "Muitas tentativas de verificação inválidas. Solicite um novo código."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:278
+msgid "Invalid verification code."
+msgstr "Código de verificação inválido."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:296
+msgid ""
+"Email verified successfully. Configure your authenticator app and send the "
+"TOTP code for activation."
+msgstr "E-mail verificado com sucesso. Configure seu aplicativo autenticador e envie o código TOTP para ativação."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:315
+msgid "Email is already verified."
+msgstr "O e-mail já foi verificado."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:320
+msgid "A new verification code has been sent to your email."
+msgstr "Um novo código de verificação foi enviado para o seu e-mail."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:347
+msgid ""
+"Email not verified. Please verify your email before confirming pre-"
+"registration."
+msgstr "E-mail não verificado. Verifique seu e-mail antes de confirmar o pré-cadastro."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:351
+msgid ""
+"TOTP secret not configured for this user. Please restart pre-registration."
+msgstr "Segredo TOTP não configurado para este usuário. Reinicie o pré-cadastro."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:355
+msgid "Invalid or expired TOTP code."
+msgstr "Código TOTP inválido ou expirado."
+
+#: Controllers/actions/admin/adminPreRegistrationActions.py:364
+msgid "Pre-registration confirmed successfully. Administrator user activated."
+msgstr "Pré-cadastro confirmado com sucesso. Usuário administrador ativado."
+
+#: Controllers/actions/election/electionActions.py:48
+msgid "The ballot must contain at least one question."
+msgstr "A cédula deve conter pelo menos uma pergunta."
+
+#: Controllers/actions/election/electionActions.py:55
+#, python-format
+msgid "Question at index %(idx)s must be a JSON object."
+msgstr "A pergunta no índice %(idx)s deve ser um objeto JSON."
+
+#: Controllers/actions/election/electionActions.py:61
+#, python-format
+msgid "Question '%(q_name)s' must contain at least one option."
+msgstr "A pergunta '%(q_name)s' deve conter pelo menos uma opção."
+
+#: Controllers/actions/election/electionActions.py:86
+msgid "The election title is required."
+msgstr "O título da eleição é obrigatório."
+
+#: Controllers/actions/election/electionActions.py:88
+msgid "The ballot structure is required."
+msgstr "A estrutura da cédula é obrigatória."
+
+#: Controllers/actions/election/electionActions.py:90
+msgid "The electoral college is required."
+msgstr "O colégio eleitoral é obrigatório."
+
+#: Controllers/actions/election/electionActions.py:92
+msgid "The election public key is required."
+msgstr "A chave pública da eleição é obrigatória."
+
+#: Controllers/actions/election/electionActions.py:94
+msgid "The keyHandle is required."
+msgstr "O keyHandle é obrigatório."
+
+#: Controllers/actions/election/electionActions.py:96
+msgid "The machine digital signature is required."
+msgstr "A assinatura digital da máquina é obrigatória."
+
+#: Controllers/actions/election/electionActions.py:118
+msgid "Physical machine signature is invalid or payload does not match."
+msgstr "A assinatura da máquina física é inválida ou o payload não corresponde."
+
+#: Controllers/actions/election/electionActions.py:135
+msgid ""
+"Could not identify the authenticated user or physical machine owner to "
+"create the election."
+msgstr "Não foi possível identificar o usuário autenticado ou o proprietário da máquina física para criar a eleição."
+
+#: Controllers/actions/election/electionActions.py:140
+msgid "An election with this keyHandle already exists."
+msgstr "Já existe uma eleição com este keyHandle."
+
+#: Controllers/actions/election/electionActions.py:250
+#, python-format
+msgid "Error generating server digital signature: %(error)s"
+msgstr "Erro ao gerar assinatura digital do servidor: %(error)s"
+
+#: Controllers/actions/election/electionActions.py:295
+msgid "This election is not open or available for public tracking."
+msgstr "Esta eleição não está aberta ou disponível para acompanhamento público."
+
+#: Controllers/actions/election/electionActions.py:388
+#: Controllers/actions/election/electionActions.py:499
+#: Controllers/actions/election/electionActions.py:608
+msgid "The election key handle is required."
+msgstr "O key handle da eleição é obrigatório."
+
+#: Controllers/actions/election/electionActions.py:400
+msgid "This election has already been closed."
+msgstr "Esta eleição já foi encerrada."
+
+#: Controllers/actions/election/electionActions.py:402
+#: Controllers/actions/election/electionActions.py:627
+msgid "This election has already been tallied."
+msgstr "Esta eleição já foi apurada."
+
+#: Controllers/actions/election/electionActions.py:404
+msgid "Cannot close an election that has not been started yet."
+msgstr "Não é possível encerrar uma eleição que ainda não foi iniciada."
+
+#: Controllers/actions/election/electionActions.py:406
+msgid "This election is not in an active voting state."
+msgstr "Esta eleição não está em estado ativo de votação."
+
+#: Controllers/actions/election/electionActions.py:413
+msgid "Only the administrator that created this election can close it."
+msgstr "Apenas o administrador que criou esta eleição pode encerrá-la."
+
+#: Controllers/actions/election/electionActions.py:417
+msgid "Only the physical machine that created this election can close it."
+msgstr "Apenas a máquina física que criou esta eleição pode encerrá-la."
+
+#: Controllers/actions/election/electionActions.py:463
+msgid "Election closed successfully. Voter quorum is locked."
+msgstr "Eleição encerrada com sucesso. O quórum de eleitores foi bloqueado."
+
+#: Controllers/actions/election/electionActions.py:513
+msgid "Votes can only be retrieved for closed or tallied elections."
+msgstr "Os votos só podem ser recuperados para eleições encerradas ou apuradas."
+
+#: Controllers/actions/election/electionActions.py:522
+msgid ""
+"Only the administrator that created this election can retrieve votes for "
+"tallying."
+msgstr "Apenas o administrador que criou esta eleição pode recuperar os votos para apuração."
+
+#: Controllers/actions/election/electionActions.py:526
+msgid ""
+"Only the physical machine that created this election can retrieve votes for "
+"tallying."
+msgstr "Apenas a máquina física que criou esta eleição pode recuperar os votos para apuração."
+
+#: Controllers/actions/election/electionActions.py:610
+msgid "The tally cryptographic hash is required."
+msgstr "O hash criptográfico da apuração é obrigatório."
+
+#: Controllers/actions/election/electionActions.py:612
+msgid "The election private key is required for tally verification."
+msgstr "A chave privada da eleição é obrigatória para a verificação da apuração."
+
+#: Controllers/actions/election/electionActions.py:614
+msgid "The tally results are required and cannot be empty."
+msgstr "Os resultados da apuração são obrigatórios e não podem estar vazios."
+
+#: Controllers/actions/election/electionActions.py:629
+msgid ""
+"Cannot tally an election while voting is still in progress. Close it first."
+msgstr "Não é possível apurar uma eleição enquanto a votação ainda está em andamento. Encerre-a primeiro."
+
+#: Controllers/actions/election/electionActions.py:631
+msgid "Cannot tally an election that has not been started."
+msgstr "Não é possível apurar uma eleição que não foi iniciada."
+
+#: Controllers/actions/election/electionActions.py:633
+msgid "Election is not in a closed state."
+msgstr "A eleição não está em estado encerrado."
+
+#: Controllers/actions/election/electionActions.py:640
+msgid "Only the administrator that created this election can tally it."
+msgstr "Apenas o administrador que criou esta eleição pode apurá-la."
+
+#: Controllers/actions/election/electionActions.py:644
+msgid ""
+"Only the authenticated physical machine that created this election can tally "
+"it."
+msgstr "Apenas a máquina física autenticada que criou esta eleição pode apurá-la."
+
+#: Controllers/actions/election/electionActions.py:651
+msgid "Invalid private key format. PEM PKCS#8 expected."
+msgstr "Formato de chave privada inválido. Esperado PEM PKCS#8."
+
+#: Controllers/actions/election/electionActions.py:661
+msgid "The provided private key does not match the election's public key."
+msgstr "A chave privada fornecida não corresponde à chave pública da eleição."
+
+#: Controllers/actions/election/electionActions.py:710
+msgid ""
+"The tally results cannot be zeroed out when ballots exist in the election."
+msgstr "Os resultados da apuração não podem estar zerados quando existem votos na eleição."
+
+#: Controllers/actions/election/electionActions.py:756
+msgid ""
+"Election tally saved successfully. Private key recorded for public "
+"verification."
+msgstr "Apuração da eleição salva com sucesso. Chave privada registrada para verificação pública."
+
+#: Controllers/actions/election/electionActions.py:780
+msgid "Audit packages are only available for tallied elections (TALLIED)."
+msgstr "Os pacotes de auditoria estão disponíveis apenas para eleições apuradas (TALLIED)."
+
+#: Controllers/actions/election/electionActions.py:785
+msgid "The private key for this election is not available."
+msgstr "A chave privada desta eleição não está disponível."
+
+#: Controllers/actions/vote/voteActions.py:56
+#: Controllers/actions/vote/voteActions.py:245
+msgid ""
+"Too many invalid attempts from this IP address. Access temporarily suspended."
+msgstr "Muitas tentativas inválidas deste endereço IP. Acesso temporariamente suspenso."
+
+#: Controllers/actions/vote/voteActions.py:59
+#: Controllers/actions/vote/voteActions.py:248
+msgid "The voting token is required."
+msgstr "O token de votação é obrigatório."
+
+#: Controllers/actions/vote/voteActions.py:62
+#: Controllers/actions/vote/voteActions.py:251
+msgid "The machine public key is required."
+msgstr "A chave pública da máquina é obrigatória."
+
+#: Controllers/actions/vote/voteActions.py:65
+#: Controllers/actions/vote/voteActions.py:257
+msgid "The client nonce is required."
+msgstr "O nonce do cliente é obrigatório."
+
+#: Controllers/actions/vote/voteActions.py:74
+#: Controllers/actions/vote/voteActions.py:266
+msgid "Invalid voting token."
+msgstr "Token de votação inválido."
+
+#: Controllers/actions/vote/voteActions.py:80
+#: Controllers/actions/vote/voteActions.py:271
+msgid ""
+"This voting token has been blocked due to multiple invalid attempts. Contact "
+"the election administrator."
+msgstr "Este token de votação foi bloqueado devido a múltiplas tentativas inválidas. Entre em contato com o administrador da eleição."
+
+#: Controllers/actions/vote/voteActions.py:87
+#: Controllers/actions/vote/voteActions.py:278
+msgid "This voting token has already been consumed."
+msgstr "Este token de votação já foi utilizado."
+
+#: Controllers/actions/vote/voteActions.py:95
+#: Controllers/actions/vote/voteActions.py:286
+msgid "This election has not started yet."
+msgstr "Esta eleição ainda não foi iniciada."
+
+#: Controllers/actions/vote/voteActions.py:97
+#: Controllers/actions/vote/voteActions.py:288
+msgid "This election has already closed."
+msgstr "Esta eleição já foi encerrada."
+
+#: Controllers/actions/vote/voteActions.py:99
+#: Controllers/actions/vote/voteActions.py:290
+msgid "This election is not open for voting."
+msgstr "Esta eleição não está aberta para votação."
+
+#: Controllers/actions/vote/voteActions.py:106
+#: Controllers/actions/vote/voteActions.py:297
+msgid "This voter has already cast their ballot."
+msgstr "Este eleitor já registrou o seu voto."
+
+#: Controllers/actions/vote/voteActions.py:122
+#: Controllers/actions/vote/voteActions.py:317
+msgid "Replay detected: this nonce has already been used."
+msgstr "Replay detectado: este nonce já foi utilizado."
+
+#: Controllers/actions/vote/voteActions.py:138
+msgid ""
+"Access denied: only hardware-backed keys (TEE or StrongBox) are accepted."
+msgstr "Acesso negado: apenas chaves protegidas por hardware (TEE ou StrongBox) são aceitas."
+
+#: Controllers/actions/vote/voteActions.py:254
+msgid "The encrypted vote content is required."
+msgstr "O conteúdo criptografado do voto é obrigatório."
+
+#: Controllers/actions/vote/voteActions.py:309
+msgid "Access denied: this voting token is bound to a different mobile device."
+msgstr "Acesso negado: este token de votação está vinculado a outro dispositivo móvel."
+
+#: Controllers/actions/vote/voteActions.py:332
+msgid "Invalid digital signature for the ballot payload."
+msgstr "Assinatura digital inválida para o payload da cédula."
+
+#: Controllers/actions/vote/voteActions.py:343
+msgid "Invalid or unrecognized vote ID for this election."
+msgstr "ID de voto inválido ou não reconhecido para esta eleição."
+
+#: Controllers/actions/vote/voteActions.py:349
+msgid "This vote ID has already been consumed."
+msgstr "Este ID de voto já foi utilizado."
+
+#: Core/schemaMixins/positionSchemaMixin.py:20
+msgid "Sort Order"
+msgstr "Ordem de Classificação"
+
+#: Core/schemaMixins/positionSchemaMixin.py:21
+msgid ""
+"Defines the display sequence for this model. Lower values typically appear "
+"first."
+msgstr "Define a sequência de exibição para este modelo. Valores menores aparecem primeiro."
+
+#: Core/schemaMixins/slugSchemaMixin.py:27
+msgid "Slug"
+msgstr "Slug"
+
+#: Core/schemaMixins/slugSchemaMixin.py:28
+msgid ""
+"URL-friendly identifier. Only letters, numbers, hyphens and underscores are "
+"allowed."
+msgstr "Identificador amigável para URL. Apenas letras, números, hífens e sublinhados são permitidos."
+
+#: Core/schemaMixins/timestampSchemaMixin.py:16
+msgid "Created At"
+msgstr "Criado em"
+
+#: Core/schemaMixins/timestampSchemaMixin.py:17
+msgid "The date and time when this record was first created."
+msgstr "A data e a hora em que este registro foi criado pela primeira vez."
+
+#: Core/schemaMixins/timestampSchemaMixin.py:23
+msgid "Updated At"
+msgstr "Atualizado em"
+
+#: Core/schemaMixins/timestampSchemaMixin.py:24
+msgid "The date and time when this record was last modified."
+msgstr "A data e a hora em que este registro foi modificado pela última vez."
+
+#: Domain/admin/electoralCollegeAdmin.py:21
+msgid "Reenviar e-mail de votação com novo token"
+msgstr "Reenviar e-mail de votação com novo token"
+
+#: Domain/admin/userAdmin.py:22
+msgid "Personal Info"
+msgstr "Informações Pessoais"
+
+#: Domain/admin/userAdmin.py:23
+msgid "Permissions & Roles"
+msgstr "Permissões e Papéis"
+
+#: Domain/admin/userAdmin.py:25
+msgid "Assign groups (Roles) and individual permissions."
+msgstr "Atribua grupos (Papéis) e permissões individuais."
+
+#: Domain/admin/userAdmin.py:27
+msgid "Hardware & 2FA"
+msgstr "Hardware e 2FA"
+
+#: Domain/admin/userAdmin.py:28
+msgid "Audit Timestamps"
+msgstr "Registros de Auditoria"
+
+#: Domain/admin/userAdmin.py:42
+msgid "Assigned Roles"
+msgstr "Papéis Atribuídos"
+
+#: Domain/admin/userAdmin.py:44
+msgid "No Role Assigned"
+msgstr "Nenhum Papel Atribuído"
+
+#: Domain/models/groupChoices.py:16
+msgid "Administrador"
+msgstr "Administrador"
+
+#: Domain/models/groupChoices.py:17
+msgid "Grupo Exemplo"
+msgstr "Grupo Exemplo"
+
+#: Domain/models/proxies/election/electoralCollegeProxy.py:90
+#: Domain/models/proxies/election/electoralCollegeProxy.py:91
+msgid "Yes"
+msgstr "Sim"
+
+#: Domain/models/proxies/election/electoralCollegeProxy.py:90
+#: Domain/models/proxies/election/electoralCollegeProxy.py:91
+msgid "No"
+msgstr "Não"
+
+#: Domain/models/proxies/election/electoralCollegeProxy.py:92
+#, python-format
+msgid ""
+"%(full_name)s (%(email)s) - Voted: %(has_voted)s - Email sent: %(email_sent)s"
+msgstr "%(full_name)s (%(email)s) - Votou: %(has_voted)s - E-mail enviado: %(email_sent)s"
+
+#: Domain/models/proxies/election/tallyProxy.py:14
+#, python-format
+msgid "Tally for Election #%(election_id)s (%(tally_hash)s...) at %(tally_dt)s"
+msgstr "Apuração da Eleição #%(election_id)s (%(tally_hash)s...) em %(tally_dt)s"
+
+#: Domain/models/proxies/election/voteProxy.py:13
+#, python-format
+msgid "Vote %(id_gen)s - Election #%(election_id)s"
+msgstr "Voto %(id_gen)s - Eleição #%(election_id)s"
+
+#: Domain/models/proxies/election/votingTokenProxy.py:96
+msgid "blocked"
+msgstr "bloqueado"
+
+#: Domain/models/proxies/election/votingTokenProxy.py:98
+msgid "used"
+msgstr "utilizado"
+
+#: Domain/models/proxies/election/votingTokenProxy.py:100
+msgid "available"
+msgstr "disponível"
+
+#: Domain/models/proxies/election/votingTokenProxy.py:101
+#, python-brace-format
+msgid "Token for {voter_email} [{status_label}]"
+msgstr "Token para {voter_email} [{status_label}]"
+
+#: Domain/models/proxies/moderation/userProxy.py:19
+msgid "No Groups"
+msgstr "Sem Grupos"
+
+#: Domain/models/proxies/moderation/userProxy.py:39
+msgid "Administrators cannot have any other roles."
+msgstr "Administradores não podem ter outros papéis."
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:13
+msgid "Ballot Ticket"
+msgstr "Comprovante de Cédula"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:14
+msgid "Ballot Tickets"
+msgstr "Comprovantes de Cédula"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:21
+#: Domain/models/schemas/election/electoralCollegeSchema.py:65
+#: Domain/models/schemas/election/questionSchema.py:29
+#: Domain/models/schemas/election/tallySchema.py:37
+#: Domain/models/schemas/election/voteSchema.py:29
+#: Domain/models/schemas/election/votingTokenSchema.py:36
+msgid "election"
+msgstr "eleição"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:24
+msgid "id voto"
+msgstr "id voto"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:28
+msgid "Randomized ballot ticket identifier issued by the backend."
+msgstr "Identificador aleatório do comprovante de cédula emitido pelo backend."
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:31
+#: Domain/models/schemas/election/votingTokenSchema.py:39
+msgid "is used"
+msgstr "foi utilizado"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:33
+msgid "True once the ballot ticket has been consumed with a deposited vote."
+msgstr "Verdadeiro quando o comprovante de cédula tiver sido consumido com um voto depositado."
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:36
+msgid "created at"
+msgstr "criado em"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:38
+msgid "Timestamp when this ballot ticket was issued."
+msgstr "Data e hora em que este comprovante de cédula foi emitido."
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:41
+#: Domain/models/schemas/election/votingTokenSchema.py:44
+msgid "used at"
+msgstr "utilizado em"
+
+#: Domain/models/schemas/election/ballotTicketSchema.py:44
+msgid "Timestamp when this ballot ticket was consumed."
+msgstr "Data e hora em que este comprovante de cédula foi consumido."
+
+#: Domain/models/schemas/election/electionSchema.py:8
+msgid "Created"
+msgstr "Criada"
+
+#: Domain/models/schemas/election/electionSchema.py:9
+msgid "Started"
+msgstr "Iniciada"
+
+#: Domain/models/schemas/election/electionSchema.py:10
+msgid "Closed"
+msgstr "Encerrada"
+
+#: Domain/models/schemas/election/electionSchema.py:11
+msgid "Tallied"
+msgstr "Apurada"
+
+#: Domain/models/schemas/election/electionSchema.py:21
+msgid "Election"
+msgstr "Eleição"
+
+#: Domain/models/schemas/election/electionSchema.py:22
+msgid "Elections"
+msgstr "Eleições"
+
+#: Domain/models/schemas/election/electionSchema.py:26
+msgid "title"
+msgstr "título"
+
+#: Domain/models/schemas/election/electionSchema.py:28
+msgid "Title of the election"
+msgstr "Título da eleição"
+
+#: Domain/models/schemas/election/electionSchema.py:31
+msgid "public key"
+msgstr "chave pública"
+
+#: Domain/models/schemas/election/electionSchema.py:32
+msgid "Election public key for encrypting ballots"
+msgstr "Chave pública da eleição para criptografar cédulas"
+
+#: Domain/models/schemas/election/electionSchema.py:35
+msgid "start date and time"
+msgstr "data e hora de início"
+
+#: Domain/models/schemas/election/electionSchema.py:38
+msgid "Voting start date and time"
+msgstr "Data e hora de início da votação"
+
+#: Domain/models/schemas/election/electionSchema.py:41
+msgid "end date and time"
+msgstr "data e hora de encerramento"
+
+#: Domain/models/schemas/election/electionSchema.py:44
+msgid "Voting end date and time"
+msgstr "Data e hora de encerramento da votação"
+
+#: Domain/models/schemas/election/electionSchema.py:47
+msgid "key handle"
+msgstr "key handle"
+
+#: Domain/models/schemas/election/electionSchema.py:50
+msgid "Unique election key handle in the machine storage"
+msgstr "Identificador único da chave da eleição no armazenamento da máquina"
+
+#: Domain/models/schemas/election/electionSchema.py:53
+msgid "machine fingerprint"
+msgstr "impressão digital da máquina"
+
+#: Domain/models/schemas/election/electionSchema.py:58
+msgid ""
+"Non-replicable public SHA-256 fingerprint of the physical machine public key"
+msgstr "Impressão digital SHA-256 pública e irreplicável da chave pública da máquina física"
+
+#: Domain/models/schemas/election/electionSchema.py:61
+msgid "machine signature"
+msgstr "assinatura da máquina"
+
+#: Domain/models/schemas/election/electionSchema.py:64
+msgid "Digital signature produced by the desktop machine"
+msgstr "Assinatura digital produzida pela máquina desktop"
+
+#: Domain/models/schemas/election/electionSchema.py:67
+msgid "private key"
+msgstr "chave privada"
+
+#: Domain/models/schemas/election/electionSchema.py:70
+msgid "Election private key revealed after tallying for public verification"
+msgstr "Chave privada da eleição revelada após a apuração para verificação pública"
+
+#: Domain/models/schemas/election/electionSchema.py:73
+msgid "status"
+msgstr "status"
+
+#: Domain/models/schemas/election/electionSchema.py:84
+msgid "created by"
+msgstr "criado por"
+
+#: Domain/models/schemas/election/electionSchema.py:90
+msgid "Election must have an associated creator user."
+msgstr "A eleição deve ter um usuário criador associado."
+
+#: Domain/models/schemas/election/electionSchema.py:94
+msgid "Election must be associated with a user (created_by cannot be null)."
+msgstr "A eleição deve estar associada a um usuário (created_by não pode ser nulo)."
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:12
+msgid "Electoral College Voter"
+msgstr "Eleitor do Colégio Eleitoral"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:13
+msgid "Electoral College"
+msgstr "Colégio Eleitoral"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:23
+msgid "full name"
+msgstr "nome completo"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:25
+msgid "Full name of the voter"
+msgstr "Nome completo do eleitor"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:28
+msgid "email"
+msgstr "e-mail"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:29
+msgid "Email of the voter"
+msgstr "E-mail do eleitor"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:32
+msgid "nickname"
+msgstr "apelido"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:36
+msgid "First name of the voter extracted from full name"
+msgstr "Primeiro nome do eleitor extraído do nome completo"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:39
+msgid "password hash"
+msgstr "hash da senha"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:43
+msgid "Hashed password of the voter (never stored in plaintext)"
+msgstr "Hash da senha do eleitor (nunca armazenado em texto simples)"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:46
+msgid "has voted"
+msgstr "já votou"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:48
+msgid "Indicates whether this voter has already cast their ballot"
+msgstr "Indica se este eleitor já registrou o seu voto"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:51
+msgid "voted at"
+msgstr "votou em"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:54
+msgid "Timestamp when this voter cast their ballot"
+msgstr "Data e hora em que este eleitor registrou o seu voto"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:57
+msgid "email sent"
+msgstr "e-mail enviado"
+
+#: Domain/models/schemas/election/electoralCollegeSchema.py:59
+msgid "Indicates whether the voting email has been sent to this voter"
+msgstr "Indica se o e-mail de votação foi enviado para este eleitor"
+
+#: Domain/models/schemas/election/optionSchema.py:12
+msgid "Option"
+msgstr "Opção"
+
+#: Domain/models/schemas/election/optionSchema.py:13
+msgid "Options"
+msgstr "Opções"
+
+#: Domain/models/schemas/election/optionSchema.py:17
+msgid "label"
+msgstr "rótulo"
+
+#: Domain/models/schemas/election/optionSchema.py:19
+msgid "Label or text of the voting option"
+msgstr "Rótulo ou texto da opção de voto"
+
+#: Domain/models/schemas/election/optionSchema.py:25
+#: Domain/models/schemas/election/questionSchema.py:17
+msgid "question"
+msgstr "pergunta"
+
+#: Domain/models/schemas/election/questionSchema.py:12
+msgid "Question"
+msgstr "Pergunta"
+
+#: Domain/models/schemas/election/questionSchema.py:13
+msgid "Questions"
+msgstr "Perguntas"
+
+#: Domain/models/schemas/election/questionSchema.py:18
+msgid "Question text or ballot statement"
+msgstr "Texto da pergunta ou enunciado da cédula"
+
+#: Domain/models/schemas/election/questionSchema.py:21
+msgid "order"
+msgstr "ordem"
+
+#: Domain/models/schemas/election/questionSchema.py:23
+msgid "Display order of the question on the ballot"
+msgstr "Ordem de exibição da pergunta na cédula"
+
+#: Domain/models/schemas/election/tallySchema.py:13
+msgid "Tally"
+msgstr "Apuração"
+
+#: Domain/models/schemas/election/tallySchema.py:14
+msgid "Tallies"
+msgstr "Apurações"
+
+#: Domain/models/schemas/election/tallySchema.py:18
+msgid "tally hash"
+msgstr "hash da apuração"
+
+#: Domain/models/schemas/election/tallySchema.py:20
+msgid "Cryptographic audit hash verifying the tally computation"
+msgstr "Hash criptográfico de auditoria que verifica o cálculo da apuração"
+
+#: Domain/models/schemas/election/tallySchema.py:23
+msgid "tally date and time"
+msgstr "data e hora da apuração"
+
+#: Domain/models/schemas/election/tallySchema.py:25
+msgid "Date and time when the tally was performed"
+msgstr "Data e hora em que a apuração foi realizada"
+
+#: Domain/models/schemas/election/tallySchema.py:28
+msgid "tally results"
+msgstr "resultados da apuração"
+
+#: Domain/models/schemas/election/tallySchema.py:31
+msgid "Structured tally results by question and option"
+msgstr "Resultados estruturados da apuração por pergunta e opção"
+
+#: Domain/models/schemas/election/voteSchema.py:11
+msgid "Vote"
+msgstr "Voto"
+
+#: Domain/models/schemas/election/voteSchema.py:12
+msgid "Votes"
+msgstr "Votos"
+
+#: Domain/models/schemas/election/voteSchema.py:16
+msgid "generated ID"
+msgstr "ID gerado"
+
+#: Domain/models/schemas/election/voteSchema.py:19
+msgid "Unique identifier for the vote"
+msgstr "Identificador único do voto"
+
+#: Domain/models/schemas/election/voteSchema.py:22
+msgid "encrypted content"
+msgstr "conteúdo criptografado"
+
+#: Domain/models/schemas/election/voteSchema.py:23
+msgid "Encrypted payload of the vote cast by the voter"
+msgstr "Payload criptografado do voto registrado pelo eleitor"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:16
+msgid "Voting Token"
+msgstr "Token de Votação"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:17
+msgid "Voting Tokens"
+msgstr "Tokens de Votação"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:21
+msgid "token hash"
+msgstr "hash do token"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:24
+msgid "SHA-256 hash of the raw token. The raw value is never stored."
+msgstr "Hash SHA-256 do token bruto. O valor bruto nunca é armazenado."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:30
+msgid "voter"
+msgstr "eleitor"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:41
+msgid "True after the token has been consumed to cast a vote."
+msgstr "Verdadeiro após o token ter sido consumido para registrar um voto."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:47
+msgid "Timestamp when the token was consumed."
+msgstr "Data e hora em que o token foi consumido."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:50
+msgid "used from IP"
+msgstr "utilizado a partir do IP"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:53
+msgid "IP address from which the token was consumed (forensic log)."
+msgstr "Endereço IP a partir do qual o token foi consumido (log forense)."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:56
+#: Domain/models/schemas/moderation/userSchema.py:41
+msgid "machine public key"
+msgstr "chave pública da máquina"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:59
+msgid ""
+"Hardware-backed public key of the machine/device that requested this ballot."
+msgstr "Chave pública protegida por hardware da máquina/dispositivo que solicitou esta cédula."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:62
+msgid "nonce"
+msgstr "nonce"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:66
+msgid "Latest nonce used for this voting token (anti-replay)."
+msgstr "Último nonce utilizado para este token de votação (anti-replay)."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:69
+msgid "failed attempts"
+msgstr "tentativas inválidas"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:71
+msgid "Count of consecutive invalid access attempts."
+msgstr "Contagem de tentativas de acesso inválidas consecutivas."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:74
+msgid "is blocked"
+msgstr "está bloqueado"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:76
+msgid ""
+"Indicates whether this token has been blocked due to excessive invalid "
+"attempts."
+msgstr "Indica se este token foi bloqueado devido a tentativas inválidas excessivas."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:79
+msgid "blocked at"
+msgstr "bloqueado em"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:82
+msgid "Timestamp when this token was blocked."
+msgstr "Data e hora em que este token foi bloqueado."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:85
+msgid "last attempt at"
+msgstr "última tentativa em"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:88
+msgid "Timestamp of the most recent access attempt."
+msgstr "Data e hora da tentativa de acesso mais recente."
+
+#: Domain/models/schemas/election/votingTokenSchema.py:91
+msgid "last attempt IP"
+msgstr "IP da última tentativa"
+
+#: Domain/models/schemas/election/votingTokenSchema.py:94
+msgid "IP address of the most recent access attempt."
+msgstr "Endereço IP da tentativa de acesso mais recente."
+
+#: Domain/models/schemas/moderation/userSchema.py:19
+msgid "User"
+msgstr "Usuário"
+
+#: Domain/models/schemas/moderation/userSchema.py:20
+msgid "Users"
+msgstr "Usuários"
+
+#: Domain/models/schemas/moderation/userSchema.py:24
+msgid "first name"
+msgstr "primeiro nome"
+
+#: Domain/models/schemas/moderation/userSchema.py:30
+msgid "last name"
+msgstr "sobrenome"
+
+#: Domain/models/schemas/moderation/userSchema.py:36
+msgid "email address"
+msgstr "endereço de e-mail"
+
+#: Domain/models/schemas/moderation/userSchema.py:44
+msgid ""
+"Machine RSA public key linked to the user for hardware validation and "
+"cryptography"
+msgstr "Chave pública RSA da máquina vinculada ao usuário para validação de hardware e criptografia"
+
+#: Domain/models/schemas/moderation/userSchema.py:47
+msgid "device id"
+msgstr "ID do dispositivo"
+
+#: Domain/models/schemas/moderation/userSchema.py:52
+msgid "Unique, OS-agnostic identifier of the physical device or machine"
+msgstr "Identificador único e independente de sistema operacional do dispositivo ou máquina física"
+
+#: Domain/models/schemas/moderation/userSchema.py:55
+msgid "TOTP secret"
+msgstr "segredo TOTP"
+
+#: Domain/models/schemas/moderation/userSchema.py:59
+msgid "Base32 secret for two-factor authentication (TOTP)"
+msgstr "Segredo Base32 para autenticação de dois fatores (TOTP)"
+
+#: Domain/models/schemas/moderation/userSchema.py:62
+msgid "email verified"
+msgstr "e-mail verificado"
+
+#: Domain/models/schemas/moderation/userSchema.py:64
+msgid ""
+"Indicates whether the administrator email has been verified during "
+"registration"
+msgstr "Indica se o e-mail do administrador foi verificado durante o cadastro"
+
+#: Domain/models/schemas/moderation/userSchema.py:67
+msgid "email verification code hash"
+msgstr "hash do código de verificação de e-mail"
+
+#: Domain/models/schemas/moderation/userSchema.py:71
+msgid "SHA-256 hash of the 6-digit email verification code"
+msgstr "Hash SHA-256 do código de verificação de e-mail de 6 dígitos"
+
+#: Domain/models/schemas/moderation/userSchema.py:74
+msgid "email verification expires at"
+msgstr "expiração da verificação de e-mail"
+
+#: Domain/models/schemas/moderation/userSchema.py:77
+msgid "Expiration timestamp for the email verification code"
+msgstr "Data e hora de expiração do código de verificação de e-mail"
+
+#: Domain/models/schemas/moderation/userSchema.py:80
+msgid "email verification attempts"
+msgstr "tentativas de verificação de e-mail"
+
+#: Domain/models/schemas/moderation/userSchema.py:82
+msgid "Number of failed email verification attempts for the current code"
+msgstr "Número de tentativas inválidas de verificação de e-mail para o código atual"
+
+#: setup/settings.py:140
+msgid "Português (Brasil)"
+msgstr "Português (Brasil)"
+
+#: setup/settings.py:141
+msgid "English"
+msgstr "Inglês"
