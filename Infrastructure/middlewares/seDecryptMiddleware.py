@@ -122,6 +122,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 ciphertext = payload_bytes + tag_bytes
                 
                 decrypted_json_bytes = aesgcm.decrypt(iv_bytes, ciphertext, None)
+                decrypted_json_bytes = SECryptoService.unpad_iso7816_4(decrypted_json_bytes)
                 decrypted_json_str = decrypted_json_bytes.decode('utf-8')
                 
                 # 2. Valida e parseia o payload descriptografado

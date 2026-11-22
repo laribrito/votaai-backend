@@ -57,6 +57,29 @@ if sys.platform == "win32":
 
 
 class SECryptoService:
+    BALLOT_PAD_BLOCK_SIZE = 1024
+    ENVELOPE_PAD_BLOCK_SIZE = 4096
+
+    @staticmethod
+    def pad_iso7816_4(data: bytes, block_size: int) -> bytes:
+        """Aplica preenchimento determinístico ISO/IEC 7816-4 (0x80 seguido de 0x00) até múltiplo de block_size."""
+        if block_size <= 0:
+            raise ValueError("block_size deve ser positivo.")
+        target = ((len(data) // block_size) + 1) * block_size
+        return data + b"\x80" + b"\x00" * (target - len(data) - 1)
+
+    @staticmethod
+    def unpad_iso7816_4(data: bytes) -> bytes:
+        """Remove preenchimento ISO/IEC 7816-4, preservando payloads legados sem padding."""
+        if not data:
+            return data
+        i = len(data) - 1
+        while i >= 0 and data[i] == 0x00:
+            i -= 1
+        if i >= 0 and data[i] == 0x80 and (i < len(data) - 1 or i == 0 or data[i - 1] < 0x80):
+            return data[:i]
+        return data
+
     # =========================================================================
     # Helpers para Linux TPM 2.0 (tpm2-tools)
     # =========================================================================
@@ -402,7 +425,7 @@ class SECryptoService:
         return serialization.load_der_public_key(key_bytes)
 
     @classmethod
-    def encrypt_response_hybrid(cls, public_key, data_bytes: bytes) -> dict:
+    def encrypt_response_hybrid(cls, public_key, data_bytes: bytes, pad_block_size: int | None = None) -> dict:
         """
         Criptografa bytes de resposta com AES-GCM (32 bytes)
         e cifra a chave AES com a chave pública RSA do cliente.
@@ -411,7 +434,8 @@ class SECryptoService:
         iv = os.urandom(12)
         aesgcm = AESGCM(aes_key)
 
-        encrypted_data = aesgcm.encrypt(iv, data_bytes, None)
+        plaintext = cls.pad_iso7816_4(data_bytes, pad_block_size) if pad_block_size else data_bytes
+        encrypted_data = aesgcm.encrypt(iv, plaintext, None)
         tag_length = 16
         ciphertext = encrypted_data[:-tag_length]
         tag = encrypted_data[-tag_length:]
