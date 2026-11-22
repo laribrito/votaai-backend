@@ -3,8 +3,11 @@ import json
 import base64
 import struct
 import datetime
+import uuid
 from pathlib import Path
+from unittest.mock import patch
 from django.conf import settings
+from django.db import DatabaseError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -196,17 +199,24 @@ class VoteCastViewTests(APITestCase):
         self.assertEqual(decrypted_data['election_id'], self.election.id)
         self.assertEqual(decrypted_data['nonce'], self.default_nonce)
 
-        # Confirma que o voto foi persistido anonimamente na tabela Vote
+        # Confirma que o voto foi persistido anonimamente na tabela Vote com UUIDv4
         vote_obj = Vote.objects.filter(election=self.election, content=self.encrypted_ballot_content).first()
         self.assertIsNotNone(vote_obj)
+        self.assertIsInstance(vote_obj.id, uuid.UUID)
+        self.assertEqual(vote_obj.id.version, 4)
         self.assertTrue(vote_obj.id_generated.startswith('VOTE-'))
         self.assertEqual(vote_obj.content, self.encrypted_ballot_content)
         self.assertEqual(vote_obj.election_id, self.election.id)
 
-        # Confirma que o token foi marcado como usado
+        # Confirma que o token foi marcado como usado e sem metadados temporais/IP
         self.voting_token.refresh_from_db()
+        self.assertIsInstance(self.voting_token.id, uuid.UUID)
+        self.assertEqual(self.voting_token.id.version, 4)
         self.assertTrue(self.voting_token.is_used)
-        self.assertIsNone(self.voting_token.used_at)  # Timestamp descorrelacionado para sigilo anônimo
+        self.assertFalse(hasattr(self.voting_token, 'used_at'))
+        self.assertFalse(hasattr(self.voting_token, 'used_ip'))
+        self.assertFalse(hasattr(self.voting_token, 'created_at'))
+        self.assertFalse(hasattr(self.voting_token, 'updated_at'))
 
         # Confirma que o eleitor foi marcado como tendo votado com timestamp registrado no colegiado
         self.voter.refresh_from_db()
@@ -396,16 +406,22 @@ class VoteCastViewTests(APITestCase):
         self.assertNotIn('id_voto', decrypted_data)
         self.assertEqual(decrypted_data['nonce'], "nonce-layered-test-010")
 
-        # Verifica persistência anônima
-        vote_obj = Vote.objects.filter(election=self.election, content=content_json).first()
+        # Verifica persistência anônima (apenas pacote_cifrado, sem id_voto em texto plano)
+        vote_obj = Vote.objects.filter(election=self.election, content=pacote_cifrado).first()
         self.assertIsNotNone(vote_obj)
+        self.assertIsInstance(vote_obj.id, uuid.UUID)
+        self.assertEqual(vote_obj.id.version, 4)
         self.assertTrue(vote_obj.id_generated.startswith('VOTE-'))
-        self.assertEqual(vote_obj.content, content_json)
+        self.assertEqual(vote_obj.content, pacote_cifrado)
+        self.assertNotIn(vote_id, vote_obj.content)
 
-        # Verifica consumo do BallotTicket com seu próprio timestamp isolado
+        # Verifica consumo do BallotTicket sem timestamps e com UUIDv4
         ticket.refresh_from_db()
+        self.assertIsInstance(ticket.id, uuid.UUID)
+        self.assertEqual(ticket.id.version, 4)
         self.assertTrue(ticket.is_used)
-        self.assertIsNotNone(ticket.used_at)
+        self.assertFalse(hasattr(ticket, 'created_at'))
+        self.assertFalse(hasattr(ticket, 'used_at'))
 
     def test_cast_vote_with_unrecognized_ballot_ticket_rejected(self):
         """id_voto que não existe na tabela BallotTicket da eleição é rejeitado."""
@@ -428,8 +444,7 @@ class VoteCastViewTests(APITestCase):
         BallotTicket.objects.create(
             election=self.election,
             id_voto=used_ticket_id,
-            is_used=True,
-            used_at=timezone.now()
+            is_used=True
         )
         payload = {
             "token": self.raw_token,
@@ -550,3 +565,25 @@ class VoteCastViewTests(APITestCase):
         envelope_again = self._encrypt_request_body(cast_again_payload)
         res_again = self.client.post(self.url, data=envelope_again, format='json')
         self.assertEqual(res_again.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cast_vote_saga_compensates_when_tx2_fails(self):
+        """Se a TX2 (depósito na urna) falhar, a compensação Saga reverte token e presença do eleitor."""
+        from Controllers.actions.vote.voteActions import VoteActions
+
+        payload = {
+            "token": self.raw_token,
+            "machine_public_key": self.device_public_pem,
+            "content": self.encrypted_ballot_content,
+            "nonce": "nonce-saga-compensation-001"
+        }
+
+        with patch('Controllers.actions.vote.voteActions.Vote.objects.create', side_effect=DatabaseError("Simulated TX2 DB failure")):
+            with self.assertRaises(DatabaseError):
+                VoteActions.castVote(payload)
+
+        self.voter.refresh_from_db()
+        self.voting_token.refresh_from_db()
+        self.assertFalse(self.voter.has_voted)
+        self.assertIsNone(self.voter.voted_at)
+        self.assertFalse(self.voting_token.is_used)
+        self.assertEqual(Vote.objects.filter(election=self.election).count(), 0)

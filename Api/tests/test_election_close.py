@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import struct
+import uuid
 from pathlib import Path
 from datetime import timedelta
 from django.conf import settings
@@ -16,6 +17,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
 from Domain.models.schemas.election.votingTokenSchema import VotingToken
+from Domain.models.schemas.election.voteSchema import Vote
+from Domain.models.schemas.election.ballotTicketSchema import BallotTicket
 from Domain.models.schemas.moderation.userSchema import User
 from Controllers.actions.vote.voteActions import VoteActions
 from Infrastructure.services.votingTokenService import VotingTokenService
@@ -365,3 +368,50 @@ class ElectionCloseTests(APITestCase):
         self.assertEqual(track_data['pending_count'], 1)
         self.assertEqual(track_data['quorum_percentage'], 75.0)
         self.assertEqual(len(track_data['electoral_college']), 4)
+
+    def test_close_election_reshuffles_ballots_with_new_uuidv4_and_cleans_unused_tickets(self):
+        """Ao fechar a eleição, cédulas e tickets usados recebem novos UUIDv4 em lote e tickets não usados são removidos."""
+        v1 = Vote.objects.create(election=self.election, id_generated="VOTE-AAA", content="CIPHER-A")
+        v2 = Vote.objects.create(election=self.election, id_generated="VOTE-BBB", content="CIPHER-B")
+        v3 = Vote.objects.create(election=self.election, id_generated="VOTE-CCC", content="CIPHER-C")
+        old_vote_ids = {v1.id, v2.id, v3.id}
+
+        t_used_1 = BallotTicket.objects.create(election=self.election, id_voto="VOTE-TICKET-USED-1", is_used=True)
+        t_used_2 = BallotTicket.objects.create(election=self.election, id_voto="VOTE-TICKET-USED-2", is_used=True)
+        BallotTicket.objects.create(election=self.election, id_voto="VOTE-TICKET-UNUSED-1", is_used=False)
+        old_ticket_ids = {t_used_1.id, t_used_2.id}
+
+        nonce = "test-nonce-reshuffle-close"
+        payload = {
+            "msg": "CLOSE_ELECTION",
+            "keyHandle": self.key_handle,
+            "nonceClient3": nonce
+        }
+        payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        sig_bytes = self.election_private_key.sign(payload_str.encode('utf-8'), padding.PKCS1v15(), hashes.SHA256())
+        payload["election_signature"] = base64.b64encode(sig_bytes).decode('utf-8')
+        payload["machine_public_key"] = self.machine_public_pem
+
+        response = self.client.post(self.url_close, data=self._encrypt_request_body(payload), format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        new_votes = list(Vote.objects.filter(election=self.election))
+        self.assertEqual(len(new_votes), 3)
+        self.assertEqual(
+            {(v.id_generated, v.content) for v in new_votes},
+            {("VOTE-AAA", "CIPHER-A"), ("VOTE-BBB", "CIPHER-B"), ("VOTE-CCC", "CIPHER-C")}
+        )
+        new_vote_ids = {v.id for v in new_votes}
+        self.assertTrue(old_vote_ids.isdisjoint(new_vote_ids))
+        for vid in new_vote_ids:
+            self.assertIsInstance(vid, uuid.UUID)
+            self.assertEqual(vid.version, 4)
+
+        remaining_tickets = list(BallotTicket.objects.filter(election=self.election))
+        self.assertEqual(len(remaining_tickets), 2)
+        self.assertEqual({t.id_voto for t in remaining_tickets}, {"VOTE-TICKET-USED-1", "VOTE-TICKET-USED-2"})
+        new_ticket_ids = {t.id for t in remaining_tickets}
+        self.assertTrue(old_ticket_ids.isdisjoint(new_ticket_ids))
+        for tid in new_ticket_ids:
+            self.assertIsInstance(tid, uuid.UUID)
+            self.assertEqual(tid.version, 4)
