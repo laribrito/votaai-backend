@@ -1,6 +1,8 @@
 import io
 import json
 import logging
+import secrets
+import uuid
 import zipfile
 from pathlib import Path
 from django.conf import settings
@@ -15,6 +17,7 @@ from Domain.models.schemas.election.electionSchema import Election, ElectionStat
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
+from Domain.models.schemas.election.ballotTicketSchema import BallotTicket
 from Domain.models.schemas.election.tallySchema import Tally
 from Domain.models.schemas.election.voteSchema import Vote
 from Domain.models.schemas.moderation.userSchema import User
@@ -326,8 +329,7 @@ class ElectionActions:
                 ),
                 "nickname": voter.nickname,
                 "email": voter.email,
-                "has_voted": voter.has_voted,
-                "voted_at": voter.voted_at.isoformat() if voter.voted_at and hasattr(voter.voted_at, 'isoformat') else voter.voted_at
+                "has_voted": voter.has_voted
             }
             for voter in voters_qs
         ]
@@ -356,9 +358,48 @@ class ElectionActions:
                 {
                     "id_generated": v.id_generated,
                     "content": v.content
-                } for v in election.votes.all().order_by('id')
+                } for v in election.votes.all().order_by('id_generated')
             ] if is_tallied else []
         }
+
+    @classmethod
+    def _reembaralhar_urna_em_lote(cls, election: Election) -> None:
+        """
+        Re-embaralha criptograficamente as cédulas da urna em uma única transação
+        no fechamento da eleição, uniformizando o xmin e aleatorizando a ordem física (ctid)
+        com novos UUIDv4, além de limpar tickets não utilizados.
+        """
+        rng = secrets.SystemRandom()
+        ballots = list(Vote.objects.filter(election=election).values('id_generated', 'content'))
+        if ballots:
+            rng.shuffle(ballots)
+            Vote.objects.filter(election=election).delete()
+            Vote.objects.bulk_create([
+                Vote(
+                    id=uuid.uuid4(),
+                    election=election,
+                    id_generated=b['id_generated'],
+                    content=b['content'],
+                )
+                for b in ballots
+            ])
+
+        BallotTicket.objects.filter(election=election, is_used=False).delete()
+        used_tickets = list(
+            BallotTicket.objects.filter(election=election, is_used=True).values_list('id_voto', flat=True)
+        )
+        if used_tickets:
+            rng.shuffle(used_tickets)
+            BallotTicket.objects.filter(election=election, is_used=True).delete()
+            BallotTicket.objects.bulk_create([
+                BallotTicket(
+                    id=uuid.uuid4(),
+                    election=election,
+                    id_voto=tv,
+                    is_used=True,
+                )
+                for tv in used_tickets
+            ])
 
     @classmethod
     def fecharEleicao(
@@ -432,8 +473,9 @@ class ElectionActions:
         if not SECryptoService.verify_signature(election.public_key, payload_bytes, election_signature):
             raise PermissionDenied(_("Invalid election signature. Possible spoofing attempt."))
 
-        # 5. Transição de estado atômica para CLOSED
+        # 5. Transição de estado atômica para CLOSED + re-embaralhamento em lote da urna
         with transaction.atomic():
+            cls._reembaralhar_urna_em_lote(election)
             election.status = ElectionStatus.CLOSED
             election.end_datetime = timezone.now()
             election.save(update_fields=['status', 'end_datetime', 'updated_at'])
@@ -525,8 +567,8 @@ class ElectionActions:
                     if norm_machine_key.strip() != norm_creator_key.strip():
                         raise PermissionDenied(_("Only the physical machine that created this election can retrieve votes for tallying."))
 
-        # 4. Busca os votos da urna
-        votes_qs = election.votes.all().order_by('id')
+        # 4. Busca os votos da urna ordenados por identificador anônimo aleatório
+        votes_qs = election.votes.all().order_by('id_generated')
         votes_data = [
             {
                 "id_generated": vote.id_generated,
@@ -785,7 +827,7 @@ class ElectionActions:
                 "private_key": str(_("The private key for this election is not available."))
             })
 
-        votes_qs = election.votes.all().order_by('id')
+        votes_qs = election.votes.all().order_by('id_generated')
         votes_data = [
             {
                 "id_generated": v.id_generated,
