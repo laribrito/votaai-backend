@@ -4,7 +4,9 @@ import base64
 import struct
 from pathlib import Path
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.urls import reverse
+from knox.models import AuthToken
 from rest_framework.test import APITestCase
 from rest_framework import status
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -12,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives import serialization, hashes
 
 from django.core import mail
+from Domain.models.groupChoices import GroupRoles
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.electoralCollegeSchema import ElectoralCollege
 from Domain.models.schemas.moderation.userSchema import User
@@ -55,6 +58,10 @@ class ElectionAvailableAndStartTests(APITestCase):
             is_active=True,
             machine_public_key=self.machine_public_pem.strip()
         )
+        self.admin_group, _ = Group.objects.get_or_create(name=GroupRoles.ADMIN.value)
+        self.user.groups.add(self.admin_group)
+        _, self.auth_token = AuthToken.objects.create(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.auth_token}")
 
         # Chave da eleição
         self.election_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -83,8 +90,30 @@ class ElectionAvailableAndStartTests(APITestCase):
         self.url_available = reverse('election-available')
         self.url_start = reverse('election-start')
 
-    def _encrypt_request_body(self, payload_dict: dict) -> dict:
-        json_bytes = json.dumps(payload_dict).encode('utf-8')
+    def _sign_payload(self, payload_dict: dict, private_key=None) -> str:
+        key = private_key or self.machine_private_key
+        canonical_dict = {k: v for k, v in payload_dict.items() if k != 'signature'}
+        canonical_bytes = json.dumps(
+            canonical_dict,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+        sig_bytes = key.sign(
+            canonical_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return base64.b64encode(sig_bytes).decode('utf-8')
+
+    def _encrypt_request_body(self, payload_dict: dict, private_key=None, sign: bool = True) -> dict:
+        body = dict(payload_dict)
+        if sign and 'machine_public_key' in body and 'signature' not in body:
+            body['signature'] = self._sign_payload(body, private_key=private_key)
+        json_bytes = json.dumps(body).encode('utf-8')
         aes_key = os.urandom(32)
         iv = os.urandom(12)
         aesgcm = AESGCM(aes_key)
@@ -294,8 +323,85 @@ class ElectionAvailableAndStartTests(APITestCase):
             "msg": "FETCH_AVAILABLE",
             "nonceClient1": "nonce-no-key"
         }
-        enc_body = self._encrypt_request_body(payload)
+        enc_body = self._encrypt_request_body(payload, sign=False)
         response = self.client.post(self.url_available, data=enc_body, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         response_json = response.json()
         self.assertIn("error", response_json)
+
+    def test_available_without_auth_token_fails_401(self):
+        payload = {
+            "msg": "FETCH_AVAILABLE",
+            "nonceClient1": "nonce-no-auth",
+            "machine_public_key": self.machine_public_pem
+        }
+        enc_body = self._encrypt_request_body(payload)
+        self.client.credentials()
+        response = self.client.post(self.url_available, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_available_non_admin_user_fails_403(self):
+        regular_user = User.objects.create_user(
+            username='regular.avail@votaai.org',
+            email='regular.avail@votaai.org',
+            password='Password123!',
+            is_active=True,
+            machine_public_key=self.machine_public_pem.strip()
+        )
+        _, regular_token = AuthToken.objects.create(regular_user)
+        payload = {
+            "msg": "FETCH_AVAILABLE",
+            "nonceClient1": "nonce-non-admin",
+            "machine_public_key": self.machine_public_pem
+        }
+        enc_body = self._encrypt_request_body(payload)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {regular_token}")
+        response = self.client.post(self.url_available, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_available_tampered_envelope_signature_fails_403(self):
+        payload = {
+            "msg": "FETCH_AVAILABLE",
+            "nonceClient1": "nonce-bad-sig",
+            "machine_public_key": self.machine_public_pem,
+            "signature": base64.b64encode(b"assinatura_adulterada").decode('utf-8')
+        }
+        enc_body = self._encrypt_request_body(payload, sign=False)
+        response = self.client.post(self.url_available, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_start_election_by_other_admin_fails_403(self):
+        other_machine = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        other_pub_pem = other_machine.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        other_admin = User.objects.create_user(
+            username='other.admin@votaai.org',
+            email='other.admin@votaai.org',
+            password='Password123!',
+            is_active=True,
+            machine_public_key=other_pub_pem.strip()
+        )
+        other_admin.groups.add(self.admin_group)
+        _, other_token = AuthToken.objects.create(other_admin)
+
+        nonce = "test-nonce-other-admin"
+        payload = {
+            "msg": "START_ELECTION",
+            "keyHandle": self.key_handle,
+            "nonceClient2": nonce
+        }
+        payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        sig_bytes = self.election_private_key.sign(
+            payload_str.encode('utf-8'),
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        payload["election_signature"] = base64.b64encode(sig_bytes).decode('utf-8')
+        payload["machine_public_key"] = other_pub_pem
+
+        enc_body = self._encrypt_request_body(payload, private_key=other_machine)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {other_token}")
+        response = self.client.post(self.url_start, data=enc_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

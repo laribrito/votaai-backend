@@ -4,13 +4,16 @@ import base64
 import struct
 from pathlib import Path
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.urls import reverse
+from knox.models import AuthToken
 from rest_framework.test import APITestCase
 from rest_framework import status
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives import serialization, hashes
 
+from Domain.models.groupChoices import GroupRoles
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.election.questionSchema import Question
 from Domain.models.schemas.election.optionSchema import Option
@@ -65,13 +68,40 @@ class ElectionCreateTests(APITestCase):
             is_active=True,
             machine_public_key=self.machine_public_pem.strip()
         )
+        self.admin_group, _ = Group.objects.get_or_create(name=GroupRoles.ADMIN.value)
+        self.user.groups.add(self.admin_group)
+        _, self.auth_token = AuthToken.objects.create(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.auth_token}")
 
         # URL da rota de criação de eleição
         self.url_create = reverse('election-create')
 
-    def _encrypt_request_body(self, payload_dict: dict) -> dict:
+    def _sign_payload(self, payload_dict: dict, private_key=None) -> str:
+        """Gera assinatura RSA-PSS sobre o JSON canônico (Sign-then-Encrypt)."""
+        key = private_key or self.machine_private_key
+        canonical_dict = {k: v for k, v in payload_dict.items() if k != 'signature'}
+        canonical_bytes = json.dumps(
+            canonical_dict,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=False
+        ).encode('utf-8')
+        sig_bytes = key.sign(
+            canonical_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return base64.b64encode(sig_bytes).decode('utf-8')
+
+    def _encrypt_request_body(self, payload_dict: dict, private_key=None, sign: bool = True) -> dict:
         """Simula o cliente Desktop cifrando a requisição com a chave pública do servidor no TPM."""
-        json_bytes = json.dumps(payload_dict).encode('utf-8')
+        body = dict(payload_dict)
+        if sign and 'machine_public_key' in body and 'signature' not in body:
+            body['signature'] = self._sign_payload(body, private_key=private_key)
+        json_bytes = json.dumps(body).encode('utf-8')
         aes_key = os.urandom(32)
         iv = os.urandom(12)
         aesgcm = AESGCM(aes_key)
@@ -262,7 +292,7 @@ class ElectionCreateTests(APITestCase):
 
 
     def test_create_election_with_invalid_machine_signature_fails(self):
-        """Valida que uma assinatura inválida da máquina física é rejeitada com erro 400."""
+        """Valida que uma assinatura inválida da máquina física é rejeitada pelo middleware com erro 403."""
         req_payload = {
             "title": "Eleição Inválida",
             "ballot": [
@@ -278,20 +308,19 @@ class ElectionCreateTests(APITestCase):
             "machine_public_key": self.machine_public_pem
         }
 
-        encrypted_body = self._encrypt_request_body(req_payload)
+        encrypted_body = self._encrypt_request_body(req_payload, sign=False)
         response = self.client.post(self.url_create, data=encrypted_body, format='json')
 
         # A resposta de erro também é cifrada pelo middleware
         decrypted_response = self._decrypt_response_body(response)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("signature", decrypted_response)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("error", decrypted_response)
 
     def test_create_election_without_questions_fails(self):
         """Valida que cédula sem perguntas é rejeitada com erro 400."""
         titulo = "Eleição Vazia"
         chave_pub = "chave_pub_123"
         key_handle = "handle_123"
-        sig = self._sign_with_machine_key(f"{titulo}:{chave_pub}:{key_handle}".encode('utf-8'))
 
         req_payload = {
             "title": titulo,
@@ -299,9 +328,9 @@ class ElectionCreateTests(APITestCase):
             "electoral_college": ["user1@votaai.org"],
             "public_key": chave_pub,
             "key_handle": key_handle,
-            "signature": sig,
             "machine_public_key": self.machine_public_pem
         }
+        req_payload["signature"] = self._sign_payload(req_payload)
 
         encrypted_body = self._encrypt_request_body(req_payload)
         response = self.client.post(self.url_create, data=encrypted_body, format='json')
@@ -358,5 +387,43 @@ class ElectionCreateTests(APITestCase):
         self.assertNotEqual(el1.key_handle, el2.key_handle)
         self.assertEqual(el1.machine_fingerprint, el2.machine_fingerprint)
         self.assertTrue(el1.machine_fingerprint.startswith("mach_"))
+
+    def test_create_election_without_auth_token_fails_401(self):
+        """Requisição sem cabeçalho Authorization deve ser rejeitada com 401."""
+        req_payload = {
+            "title": "Eleição Sem Token",
+            "ballot": [{"question": "Pergunta 1", "options": ["Sim", "Não"]}],
+            "electoral_college": ["eleitor1@votaai.org"],
+            "public_key": "chave_pub_123",
+            "key_handle": "votaai_election_no_auth_01",
+            "machine_public_key": self.machine_public_pem
+        }
+        encrypted_body = self._encrypt_request_body(req_payload)
+        self.client.credentials()
+        response = self.client.post(self.url_create, data=encrypted_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_election_non_admin_user_fails_403(self):
+        """Usuário autenticado fora do grupo Administrador deve ser rejeitado com 403."""
+        regular_user = User.objects.create_user(
+            username='regular.create@votaai.org',
+            email='regular.create@votaai.org',
+            password='Password123!',
+            is_active=True,
+            machine_public_key=self.machine_public_pem.strip()
+        )
+        _, regular_token = AuthToken.objects.create(regular_user)
+        req_payload = {
+            "title": "Eleição Usuário Comum",
+            "ballot": [{"question": "Pergunta 1", "options": ["Sim", "Não"]}],
+            "electoral_college": ["eleitor1@votaai.org"],
+            "public_key": "chave_pub_123",
+            "key_handle": "votaai_election_non_admin_01",
+            "machine_public_key": self.machine_public_pem
+        }
+        encrypted_body = self._encrypt_request_body(req_payload)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {regular_token}")
+        response = self.client.post(self.url_create, data=encrypted_body, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
