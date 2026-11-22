@@ -1,22 +1,27 @@
+import uuid
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from Core.schemaMixins.timestampSchemaMixin import TimestampSchemaMixin
 from Domain.models.proxies.election.votingTokenProxy import VotingTokenProxy
 
 
-class VotingToken(VotingTokenProxy, TimestampSchemaMixin):
+class VotingToken(VotingTokenProxy, models.Model):
     """
     Domain Model: Voting Token.
     Single-use token sent via email to each electoral college voter.
     Once consumed (is_used=True), it cannot be reused.
     The raw token is never stored — only its SHA-256 hash is persisted.
+    Uses non-orderable UUIDv4 primary keys and omits creation/usage timestamps.
     """
 
     class Meta:
         verbose_name = _('Voting Token')
         verbose_name_plural = _('Voting Tokens')
-        ordering = ['-created_at']
 
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
     token_hash = models.CharField(
         _('token hash'),
         max_length=64,
@@ -39,18 +44,6 @@ class VotingToken(VotingTokenProxy, TimestampSchemaMixin):
         _('is used'),
         default=False,
         help_text=_('True after the token has been consumed to cast a vote.')
-    )
-    used_at = models.DateTimeField(
-        _('used at'),
-        null=True,
-        blank=True,
-        help_text=_('Timestamp when the token was consumed.')
-    )
-    used_ip = models.GenericIPAddressField(
-        _('used from IP'),
-        null=True,
-        blank=True,
-        help_text=_('IP address from which the token was consumed (forensic log).')
     )
     machine_public_key = models.TextField(
         _('machine public key'),
