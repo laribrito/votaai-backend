@@ -21,23 +21,6 @@ if [ "$ENABLE_MIGRATIONS" = "True" ]; then
     fi
 fi
 
-# Sincronizar arquivos iniciais de mídia para o volume persistente (/media).
-# A pasta /app/media vem embutida na imagem Docker (COPY . /app/).
-# O volume /media é persistente entre deploys, mas pode estar vazio na primeira vez.
-# Este passo garante que arquivos iniciais e placeholders estejam sempre disponíveis
-# sem sobrescrever arquivos que já existam no volume (uploads de usuários).
-MEDIA_SRC="/app/media"
-MEDIA_DST="/media"
-if [ -d "$MEDIA_SRC" ]; then
-    echo "Sincronizando arquivos de mídia: $MEDIA_SRC → $MEDIA_DST"
-    mkdir -p "$MEDIA_DST"
-    # Copia apenas arquivos que ainda não existem no destino (não sobrescreve)
-    cp -rn "$MEDIA_SRC"/* "$MEDIA_DST"/ 2>/dev/null || true
-    echo "Sincronização de mídia concluída."
-else
-    echo "Aviso: pasta $MEDIA_SRC não encontrada na imagem. Nenhuma mídia copiada."
-fi
-
 # Rodar o comando de seed de desenvolvimento se a variável ENABLE_SEED for "True"
 if [ "$ENABLE_SEED" = "True" ]; then
     echo "Executando seed inicial do banco de dados (seedDev)..."

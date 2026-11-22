@@ -23,7 +23,6 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/schema',
         '/api/redoc',
         '/static',
-        '/media',
         '/votar',
         '/api/public',
         '/api/election/public',
