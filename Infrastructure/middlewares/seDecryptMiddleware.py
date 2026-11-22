@@ -42,6 +42,17 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/election/tally',     # apurar eleição
     )
 
+    # Rotas Desktop que exigem obrigatoriamente assinatura RSA-PSS válida do envelope
+    SIGNED_DESKTOP_ROUTES = (
+        '/api/admin/pre-registration/start',
+        '/api/election/create',
+        '/api/election/available',
+        '/api/election/start',
+        '/api/election/list',
+        '/api/election/close',
+        '/api/election/tally',
+    )
+
 
     # Prefixos de rotas para Mobile usando a chave 2
     MOBILE_ROUTES = (
@@ -145,15 +156,32 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 verify_pub_key = machine_public_key_pem
 
                 # 6. Verifica a assinatura RSA-PSS injetada pelo desktop antes de cifrar (Sign-then-Encrypt).
-                if verify_pub_key and 'signature' in decrypted_payload:
+                if path.startswith(self.SIGNED_DESKTOP_ROUTES):
+                    if not verify_pub_key:
+                        return JsonResponse(
+                            {'error': 'Chave pública da máquina (desktop) ausente.'},
+                            status=400
+                        )
+                    sig_val = decrypted_payload.get('signature')
+                    if not sig_val or not str(sig_val).strip():
+                        logger.warning(f"Assinatura RSA-PSS de envelope ausente para {device_type} em {path}.")
+                        return JsonResponse(
+                            {'error': 'Assinatura digital inválida ou ausente. Requisição rejeitada.'},
+                            status=403
+                        )
                     is_valid_envelope = SECryptoService.verify_payload_signature(verify_pub_key, decrypted_payload)
                     request._envelope_signature_valid = is_valid_envelope
-                    if not is_valid_envelope and path.startswith('/api/admin/pre-registration/start'):
+                    if not is_valid_envelope:
                         logger.warning(f"Assinatura RSA-PSS de envelope inválida para {device_type} em {path}.")
                         return JsonResponse(
                             {'error': 'Assinatura digital inválida ou ausente. Requisição rejeitada.'},
                             status=403
                         )
+                elif verify_pub_key and 'signature' in decrypted_payload:
+                    request._envelope_signature_valid = SECryptoService.verify_payload_signature(
+                        verify_pub_key,
+                        decrypted_payload
+                    )
 
                 # 7. Sobrescreve o corpo da requisição com os dados em texto claro.
                 #    Dessa forma, as Views (Controllers) não precisam saber de criptografia.
@@ -204,7 +232,10 @@ class SEDecryptMiddleware(MiddlewareMixin):
         try:
             req_machine_pub_key = getattr(request, '_machine_public_key', None)
             if req_machine_pub_key:
-                client_pub_key = SECryptoService.load_rsa_public_key(req_machine_pub_key)
+                try:
+                    client_pub_key = SECryptoService.load_rsa_public_key(req_machine_pub_key)
+                except Exception:
+                    client_pub_key = None
             else:
                 client_pub_key = None
 
