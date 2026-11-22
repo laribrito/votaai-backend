@@ -4,8 +4,8 @@ from Domain.models import BallotTicket
 
 @admin.register(BallotTicket)
 class BallotTicketAdmin(admin.ModelAdmin):
-    list_display = ('id_voto', 'election', 'is_used', 'created_at', 'used_at')
-    list_filter = ('election', 'is_used', 'created_at')
+    list_display = ('id', 'id_voto', 'election', 'is_used')
+    list_filter = ('election', 'is_used')
     search_fields = ('id_voto',)
-    readonly_fields = ('id_voto', 'created_at', 'used_at')
+    readonly_fields = ('id', 'id_voto')
 

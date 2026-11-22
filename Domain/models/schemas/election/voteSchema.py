@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from Domain.models.proxies.election.voteProxy import VoteProxy
@@ -5,12 +6,18 @@ from Domain.models.proxies.election.voteProxy import VoteProxy
 class Vote(VoteProxy, models.Model):
     """
     Domain Model: Encrypted Vote.
-    Stores anonymous, encrypted ballots deposited in an election without timestamps.
+    Stores anonymous, encrypted ballots deposited in an election without timestamps
+    and with non-orderable UUIDv4 primary keys.
     """
     class Meta:
         verbose_name = _('Vote')
         verbose_name_plural = _('Votes')
-        ordering = ['?']  # Reordenação aleatória padrão (Mixnet / Anti-Timing)
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
 
     id_generated = models.CharField(
         _('generated ID'),

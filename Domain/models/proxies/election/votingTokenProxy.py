@@ -14,13 +14,13 @@ class VotingTokenProxy:
 
     def mark_as_used(self, ip_address: str = None) -> None:
         """
-        Marks the token as used without recording exact voting timestamp,
-        preventing temporal linkage with anonymous ballot tickets in the database.
+        Marks the token as used without recording consumption timestamp or IP,
+        preventing temporal or forensic linkage with anonymous ballots.
         """
         self.is_used = True
-        self.used_at = None
-        self.used_ip = None
-        self.save(update_fields=['is_used', 'used_at', 'used_ip'])
+        self.last_attempt_at = None
+        self.last_attempt_ip = None
+        self.save(update_fields=['is_used', 'last_attempt_at', 'last_attempt_ip'])
 
     def record_failed_attempt(self, ip_address: str = None, max_attempts: int = None) -> None:
         """

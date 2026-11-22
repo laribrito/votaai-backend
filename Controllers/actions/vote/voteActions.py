@@ -3,10 +3,11 @@ import json
 import logging
 import re
 import secrets
+import time
 import uuid
 from django.conf import settings
 from django.core.cache import cache
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -300,7 +301,7 @@ class VoteActions:
         return any(SECryptoService.verify_signature(machine_pub_key, payload, signature) for payload in candidates)
 
     @classmethod
-    def _cast_vote_in_transaction(
+    def _consume_voter_in_tx1(
         cls,
         token_hash: str,
         machine_pub_key: str,
@@ -310,9 +311,8 @@ class VoteActions:
         exposed_id_voto: str,
         pacote_cifrado: str | None,
         nonce_cache_key: str,
-        ip_address: str | None,
-    ) -> tuple[dict | None, int | None, ValidationError | None]:
-        """Executes locked token/voter checks and persists the anonymous ballot atomically."""
+    ) -> tuple[dict | None, uuid.UUID | None, ValidationError | None]:
+        """TX1: Locks VotingToken/ElectoralCollege, validates eligibility and marks voter participation."""
         token_obj = VotingToken.objects.select_for_update().filter(token_hash=token_hash).first()
         if not token_obj:
             return None, None, cls._invalid_token_error()
@@ -349,70 +349,102 @@ class VoteActions:
             logger.warning(f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': Assinatura digital do voto inválida.")
             return None, token_obj.id, ValidationError({"signature": _("Invalid digital signature for the ballot payload.")})
 
-        # 8.1. Validação do ticket de cédula anônima (BallotTicket), se id_voto foi fornecido
-        ballot_ticket = None
+        # 8.1. Pré-validação somente leitura do ticket anônimo (BallotTicket) antes de consumir o eleitor
         if exposed_id_voto:
-            ballot_ticket = BallotTicket.objects.select_for_update().filter(
+            ticket_preview = BallotTicket.objects.filter(
                 election=election,
                 id_voto=exposed_id_voto
             ).first()
-            if not ballot_ticket:
+            if not ticket_preview:
                 logger.warning(
                     f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': id_voto '{exposed_id_voto}' não encontrado na eleição #{election.id}."
                 )
                 return None, token_obj.id, ValidationError({"id_voto": _("Invalid or unrecognized vote ID for this election.")})
-            if ballot_ticket.is_used:
+            if ticket_preview.is_used:
                 logger.warning(
                     f"[VOTING_TOKEN_FAILED] Eleitor '{voter.email}': id_voto '{exposed_id_voto}' já foi consumido."
                 )
                 return None, None, ValidationError({"id_voto": _("This vote ID has already been consumed.")})
 
-        # 9. Geração do recibo/comprovante anônimo e depósito do voto na urna eleitoral
+        previous_state = {
+            "token_id": token_obj.id,
+            "voter_id": voter.id,
+            "election_id": election.id,
+            "previous_nonce": token_obj.nonce,
+            "previous_last_attempt_at": token_obj.last_attempt_at,
+            "previous_last_attempt_ip": token_obj.last_attempt_ip,
+        }
+
         now = timezone.now()
-        if exposed_id_voto:
-            raw_receipt = f"{election.id}:{exposed_id_voto}:{content}:{uuid.uuid4().hex}:{now.isoformat()}"
-        else:
-            raw_receipt = f"{election.id}:{content}:{uuid.uuid4().hex}:{now.isoformat()}"
-        receipt_hash = hashlib.sha256(raw_receipt.encode('utf-8')).hexdigest().upper()
-        receipt_id = f"VOTE-{receipt_hash}"
-
-        # Persiste o voto anônimo (Sem relação de chave estrangeira com o eleitor)
-        Vote.objects.create(
-            id_generated=receipt_id,
-            content=content,
-            election=election
-        )
-
-        # Consome o BallotTicket anônimo com seu timestamp próprio isolado
-        if ballot_ticket:
-            ballot_ticket.is_used = True
-            ballot_ticket.used_at = now
-            ballot_ticket.save(update_fields=['is_used', 'used_at'])
-
-        # 10. Consome o token de uso único e marca no colegiado eleitoral que o eleitor votou (com data e hora)
-        token_obj.mark_as_used(ip_address=ip_address)
+        token_obj.mark_as_used()
         voter.has_voted = True
         voter.voted_at = now
         voter.save(update_fields=['has_voted', 'voted_at'])
 
-        logger.info(
-            f"[VOTE_CAST_SUCCESS] Cédula eleitoral depositada com sucesso na eleição #{election.id}. "
-            f"Comprovante gerado: {receipt_id} (IP: {ip_address or 'desconhecido'})."
-        )
-
         return {
             "election_id": election.id,
-            "deposited_at": now,
-            "status": "CONFIRMED",
-            "nonce": nonce
+            "now": now,
+            "previous_state": previous_state,
         }, None, None
+
+    @classmethod
+    def _deposit_ballot_in_tx2(
+        cls,
+        election_id: int,
+        stored_content: str,
+        exposed_id_voto: str,
+    ) -> None:
+        """TX2: Atomically consumes the BallotTicket (if any) and inserts the anonymous Vote in a separate transaction."""
+        with transaction.atomic():
+            if exposed_id_voto:
+                ballot_ticket = BallotTicket.objects.select_for_update().filter(
+                    election_id=election_id,
+                    id_voto=exposed_id_voto
+                ).first()
+                if not ballot_ticket:
+                    raise ValidationError({"id_voto": _("Invalid or unrecognized vote ID for this election.")})
+                if ballot_ticket.is_used:
+                    raise ValidationError({"id_voto": _("This vote ID has already been consumed.")})
+                ballot_ticket.is_used = True
+                ballot_ticket.save(update_fields=['is_used'])
+
+            raw_receipt = f"{election_id}:{stored_content}:{secrets.token_hex(32)}"
+            receipt_hash = hashlib.sha256(raw_receipt.encode('utf-8')).hexdigest().upper()
+            receipt_id = f"VOTE-{receipt_hash}"
+
+            Vote.objects.create(
+                id=uuid.uuid4(),
+                id_generated=receipt_id,
+                content=stored_content,
+                election_id=election_id,
+            )
+
+            logger.info(
+                f"[VOTE_CAST_SUCCESS] Cédula eleitoral depositada com sucesso na eleição #{election_id}. "
+                f"Comprovante gerado: {receipt_id}."
+            )
+
+    @classmethod
+    def _compensate_voter_consumption(cls, previous_state: dict) -> None:
+        """Compensating transaction: reverts token and voter state if TX2 ballot persistence fails."""
+        with transaction.atomic():
+            VotingToken.objects.filter(pk=previous_state["token_id"]).update(
+                is_used=False,
+                nonce=previous_state["previous_nonce"],
+                last_attempt_at=previous_state["previous_last_attempt_at"],
+                last_attempt_ip=previous_state["previous_last_attempt_ip"],
+            )
+            ElectoralCollege.objects.filter(pk=previous_state["voter_id"]).update(
+                has_voted=False,
+                voted_at=None,
+            )
 
     @classmethod
     def castVote(cls, data: dict, raw_data: dict | None = None, ip_address: str | None = None) -> dict:
         """
         Receives an encrypted ballot, validates token authenticity, device binding against
         the StrongBox key that requested the ballot, anti-replay nonces, and records the anonymous
-        vote in the ballot box while consuming the single-use token.
+        vote in the ballot box in a decoupled Saga transaction while consuming the single-use token.
         """
         raw_token = str(data.get('token') or '').strip()
         machine_pub_key = str(data.get('machine_public_key') or '').strip()
@@ -434,16 +466,19 @@ class VoteActions:
         except Exception:
             pass
 
+        # Persiste apenas o pacote cifrado na urna, evitando correlação direta com BallotTicket.id_voto
+        stored_content = pacote_cifrado if pacote_cifrado else content
+
         # 0. Proteção contra força bruta no nível de IP e campos obrigatórios
         ip_fail_key, current_ip_fails = cls._check_ip_rate_limit(ip_address)
         cls._validate_required_fields(raw_token, machine_pub_key, nonce, content=content, require_content=True)
 
-        # 1. Valida e deposita o voto sob transação atômica com lock de linha
+        # 1. TX1: Valida e consome o token/eleitor sob transação atômica com lock de linha
         token_hash = VotingTokenService._hash_token(raw_token)
         nonce_cache_key = f"vote_nonce_used_{nonce}"
 
         with transaction.atomic():
-            result, failed_token_id, validation_error = cls._cast_vote_in_transaction(
+            tx1_result, failed_token_id, validation_error = cls._consume_voter_in_tx1(
                 token_hash=token_hash,
                 machine_pub_key=machine_pub_key,
                 content=content,
@@ -452,7 +487,6 @@ class VoteActions:
                 exposed_id_voto=exposed_id_voto,
                 pacote_cifrado=pacote_cifrado,
                 nonce_cache_key=nonce_cache_key,
-                ip_address=ip_address,
             )
 
         if validation_error is not None:
@@ -464,6 +498,38 @@ class VoteActions:
                 cls._increment_ip_failure(ip_fail_key, current_ip_fails)
             raise validation_error
 
+        # 2. TX2: Deposita a cédula anônima em transação separada com retry curto e compensação Saga
+        previous_state = tx1_result["previous_state"]
+        election_id = tx1_result["election_id"]
+        now = tx1_result["now"]
+
+        max_tx2_attempts = 3
+        for attempt in range(max_tx2_attempts):
+            try:
+                cls._deposit_ballot_in_tx2(
+                    election_id=election_id,
+                    stored_content=stored_content,
+                    exposed_id_voto=exposed_id_voto,
+                )
+                break
+            except ValidationError:
+                cls._compensate_voter_consumption(previous_state)
+                raise
+            except DatabaseError:
+                if attempt + 1 < max_tx2_attempts:
+                    time.sleep(0.01 * (attempt + 1))
+                    continue
+                cls._compensate_voter_consumption(previous_state)
+                raise
+            except Exception:
+                cls._compensate_voter_consumption(previous_state)
+                raise
+
         cls._finalize_nonce_and_ip_cache(nonce_cache_key, ip_fail_key)
 
-        return result
+        return {
+            "election_id": election_id,
+            "deposited_at": now,
+            "status": "CONFIRMED",
+            "nonce": nonce
+        }

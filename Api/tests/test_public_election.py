@@ -221,11 +221,12 @@ class PublicElectionTests(APITestCase):
         self.assertTrue(voters_by_email['carlos.lima@votaai.org']['has_voted'])
         self.assertFalse(voters_by_email['beatriz.mendes@votaai.org']['has_voted'])
 
-        # Garante que senhas NUNCA são expostas
+        # Garante que senhas e timestamps de voto NUNCA são expostos
         for v in colegiado:
             self.assertNotIn('password', v)
             self.assertNotIn('token', v)
             self.assertNotIn('voting_token', v)
+            self.assertNotIn('voted_at', v)
 
     def test_retrieve_election_alternative_urls(self):
         """As rotas alternativas /api/election/public/<id>/ e /api/election/track/<id>/ devem funcionar."""
@@ -367,6 +368,8 @@ class PublicElectionTests(APITestCase):
         voters_by_email = {v['email']: v for v in res['electoral_college']}
         self.assertEqual(voters_by_email['luciana.ferreira@votaai.org']['full_name'], "Luciana Ferreira (Ausente)")
         self.assertEqual(voters_by_email['fernando.rocha@votaai.org']['full_name'], "Fernando Rocha")
+        for v in res['electoral_college']:
+            self.assertNotIn('voted_at', v)
 
     def test_audit_package_download_success(self):
         """Deve baixar com sucesso o pacote ZIP com a chave privada e os votos criptografados de uma eleição TALLIED."""
