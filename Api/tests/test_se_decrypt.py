@@ -159,3 +159,54 @@ class SEDecryptMiddlewareTests(APITestCase):
         self.assertIn("data_recebida", decrypted_response_data)
         self.assertEqual(decrypted_response_data["data_recebida"]["acao"], "pre_cadastro_admin")
         self.assertEqual(decrypted_response_data["data_recebida"]["admin_email"], "admin@votaai.org")
+
+    def test_request_with_iso7816_4_padding_roundtrip(self):
+        """
+        Valida que requisições preenchidas com ISO/IEC 7816-4 para 4096 B produzem
+        o mesmo tamanho cifrado e são decifradas corretamente pelo SEDecryptMiddleware.
+        """
+        from Infrastructure.services.seCryptoService import SECryptoService
+
+        client_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        client_public_pem = client_private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+
+        payload_short = {"msg": "curto", "machine_public_key": client_public_pem}
+        payload_long = {"msg": "x" * 600, "machine_public_key": client_public_pem}
+
+        envelopes = []
+        for pl in (payload_short, payload_long):
+            padded = SECryptoService.pad_iso7816_4(
+                json.dumps(pl).encode('utf-8'),
+                SECryptoService.ENVELOPE_PAD_BLOCK_SIZE,
+            )
+            self.assertEqual(len(padded), SECryptoService.ENVELOPE_PAD_BLOCK_SIZE)
+            aes_key = os.urandom(32)
+            iv = os.urandom(12)
+            ct_tag = AESGCM(aes_key).encrypt(iv, padded, None)
+            enc_aes = self.backend_public_key.encrypt(aes_key, padding.PKCS1v15())
+            envelopes.append({
+                "encrypted_payload": base64.b64encode(ct_tag[:-16]).decode('utf-8'),
+                "encrypted_aes_key": base64.b64encode(enc_aes).decode('utf-8'),
+                "iv": base64.b64encode(iv).decode('utf-8'),
+                "tag": base64.b64encode(ct_tag[-16:]).decode('utf-8'),
+            })
+
+        self.assertEqual(len(envelopes[0]["encrypted_payload"]), len(envelopes[1]["encrypted_payload"]))
+        self.assertEqual(len(json.dumps(envelopes[0], separators=(",", ":"))), len(json.dumps(envelopes[1], separators=(",", ":"))))
+
+        for idx, env in enumerate(envelopes):
+            response = self.client.post(self.url, data=env, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            enc_resp = response.json()
+            aes_key_r = client_private_key.decrypt(base64.b64decode(enc_resp["encrypted_aes_key"]), padding.PKCS1v15())
+            dec_r = AESGCM(aes_key_r).decrypt(
+                base64.b64decode(enc_resp["iv"]),
+                base64.b64decode(enc_resp["encrypted_payload"]) + base64.b64decode(enc_resp["tag"]),
+                None,
+            )
+            dec_obj = json.loads(SECryptoService.unpad_iso7816_4(dec_r).decode('utf-8'))
+            expected_msg = "curto" if idx == 0 else ("x" * 600)
+            self.assertEqual(dec_obj["data_recebida"]["msg"], expected_msg)
