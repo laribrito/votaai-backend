@@ -17,6 +17,16 @@ services:
     ports:
       - "5432:5432"
 
+  # Serviço de Cache Distribuído Redis 7 (Anti-Replay e Rate Limiting)
+  redis:
+    image: redis:7-alpine
+    container_name: ${CONTAINER_PREFIX:-django}_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+
   # Serviço do seu Back-end Django (Python 3.13)
   web:
     build: .
@@ -24,19 +34,16 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ".:/app"
-      # Padrão: Named volume para uploads de mídia
-      - media_data:/media
-      # Produção (Dokploy): Descomente abaixo para bind mount persistente fora da pasta do projeto
-      # - ../files/media:/media
     ports:
       - "8000:8000"
     env_file:
       - .env
     depends_on:
       - db
+      - redis
 
 # Declaração dos volumes nomeados
 volumes:
   postgres_data:
-  media_data:
+  redis_data:
 

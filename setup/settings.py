@@ -19,12 +19,17 @@ from django.utils.translation import gettext_lazy as _
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Configurações de segurança de início rápido
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-n32wyxvyr8!2ps0vzw6yj99-1$%4tc*@eno1kskeklb99061%=')
+# SECRET_KEY obrigatória via variável de ambiente / .env (sem fallback inseguro em código)
+SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 # Permite hosts específicos definidos em variável de ambiente, padrão vazio se em produção
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
+
+# Em produção (DEBUG=False), Django Admin e documentação OpenAPI ficam desativados por padrão
+ENABLE_ADMIN = config('ENABLE_ADMIN', default=DEBUG, cast=bool)
+ENABLE_API_DOCS = config('ENABLE_API_DOCS', default=DEBUG, cast=bool)
 
 # Definição da aplicação
 
@@ -40,7 +45,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'django_filters',
-    'corsheaders',
     'knox',
     'django_extensions',
 
@@ -52,15 +56,33 @@ INSTALLED_APPS = [
 
 AUTH_USER_MODEL = 'Domain.User'
 
+IS_TESTING = 'test' in sys.argv
+THROTTLE_RATE_ANON = config('THROTTLE_RATE_ANON', default='10000/minute' if IS_TESTING else '60/minute')
+THROTTLE_RATE_USER = config('THROTTLE_RATE_USER', default='10000/minute' if IS_TESTING else '120/minute')
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'knox.auth.TokenAuthentication', 
+        'knox.auth.TokenAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': THROTTLE_RATE_ANON,
+        'user': THROTTLE_RATE_USER,
+    },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
+
+# Em produção (DEBUG=False), desativa a interface web navegável do DRF (BrowsableAPIRenderer)
+if not DEBUG:
+    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = (
+        'rest_framework.renderers.JSONRenderer',
+    )
 
 SPECTACULAR_SETTINGS = {
     'TITLE': config('API_TITLE', default='My API'),
@@ -74,7 +96,6 @@ SPECTACULAR_SETTINGS = {
 APP_NAME = config('APP_NAME', default='My App')
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Servidor eficiente de arquivos estáticos em produção
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -106,13 +127,43 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'setup.wsgi.application'
 
-# Banco de Dados
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Banco de Dados (PostgreSQL quando DB_NAME estiver configurado; fallback para SQLite local)
+DB_NAME = config('DB_NAME', default='').strip()
+if DB_NAME:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME,
+            'USER': config('DB_USER', default='postgres'),
+            'PASSWORD': config('DB_PASSWORD', default='postgres'),
+            'HOST': config('DB_HOST', default='db'),
+            'PORT': config('DB_PORT', default='5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Cache Distribuído (Redis para Anti-Replay e Rate Limiting em produção/Docker; LocMem em testes/local)
+REDIS_URL = config('REDIS_URL', default='').strip()
+if REDIS_URL and not IS_TESTING:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'votaai-local-cache',
+        }
+    }
 
 # Validação de senha
 AUTH_PASSWORD_VALIDATORS = [
@@ -156,27 +207,30 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'  # Armazenamento otimizado para produção
 
-# Arquivos de mídia (Uploads de arquivos)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR.parent / 'media'
-
 # Tipo de campo de chave primária padrão
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CONFIGURAÇÃO DO CORS 4.9.0
-CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=False, cast=bool)
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001', cast=Csv())
+# ==============================================================================
+# SEGURANÇA E HARDENING HTTP / PRODUÇÃO (HTTPS / Proxy Reverso)
+# ==============================================================================
+X_FRAME_OPTIONS = config('X_FRAME_OPTIONS', default='DENY')
+SECURE_CONTENT_TYPE_NOSNIFF = config('SECURE_CONTENT_TYPE_NOSNIFF', default=True, cast=bool)
+SECURE_REFERRER_POLICY = config('SECURE_REFERRER_POLICY', default='strict-origin-when-cross-origin')
+SECURE_CROSS_ORIGIN_OPENER_POLICY = config('SECURE_CROSS_ORIGIN_OPENER_POLICY', default='same-origin')
+SESSION_COOKIE_HTTPONLY = config('SESSION_COOKIE_HTTPONLY', default=True, cast=bool)
+CSRF_COOKIE_HTTPONLY = config('CSRF_COOKIE_HTTPONLY', default=True, cast=bool)
+SESSION_COOKIE_SAMESITE = config('SESSION_COOKIE_SAMESITE', default='Lax')
+CSRF_COOKIE_SAMESITE = config('CSRF_COOKIE_SAMESITE', default='Lax')
 
-# ==============================================================================
-# SEGURANÇA EM PRODUÇÃO (HTTPS / Proxy Reverso)
-# ==============================================================================
 USE_HTTPS = config('USE_HTTPS', default=False, cast=bool)
 if USE_HTTPS:
-    CORS_ALLOW_CREDENTIALS = True  # sem isso, o cookie nunca é aceito cross-origin
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=31536000, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = config('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True, cast=bool)
+    SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=True, cast=bool)
 
 REST_KNOX = {
     'TOKEN_TTL': timedelta(hours=10),
@@ -207,12 +261,9 @@ ELECTION_INFO_URL = config('ELECTION_INFO_URL', default='http://localhost:5173/e
 MOBILE_VOTING_URL = config('MOBILE_VOTING_URL', default='votaai://votar/?token=')
 
 # Chave privada assimétrica ECDSA P-256 (PEM) para assinatura dos QR Codes (formato votaai-qr:v2)
+# Obrigatória via variável de ambiente / .env (sem fallback hardcoded em código).
 # O app mobile possui apenas a chave pública embutida, impedindo falsificação mesmo com extração do APK.
-QR_SIGNING_PRIVATE_KEY = config('QR_SIGNING_PRIVATE_KEY', default="""-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEIAhpqS3Kvy7qjmYN2R+T/V0PpiOBRlIyi2EF9VNKP43RoAoGCCqGSM49
-AwEHoUQDQgAELCNngOqmiTYGoPVhe91LA7bzpC15IbLmODVPGW093r5DRzcvVAky
-aTOurA9/K16Mv20SespIJ851Fw8wkzHVtw==
------END EC PRIVATE KEY-----""")
+QR_SIGNING_PRIVATE_KEY = config('QR_SIGNING_PRIVATE_KEY')
 
 # Link / URL web para exibição segura do QR Code (validação direta na View com ?token=)
 WEB_VOTING_URL = config('WEB_VOTING_URL', default='http://localhost:8000/votar/?token=')
