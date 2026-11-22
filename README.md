@@ -587,7 +587,6 @@ Raiz do Projeto
 ├── Core/           # Mixins Globais: TimestampSchemaMixin, SlugSchemaMixin, PositionSchemaMixin
 ├── Domain/         # Camada de Negócio: Models (Schema + Proxy), Signals, Choices, Admin
 ├── Infrastructure/ # Módulos Externos: Criptografia TPM, Android KeyStore, E-mail, Middlewares
-├── media/          # Diretório de uploads de mídia
 └── setup/          # Configurações Django: settings, urls, wsgi, asgi
 ```
 
@@ -620,8 +619,8 @@ Request → Infrastructure (SEDecryptMiddleware decodifica envelope com TPM)
 | Atestação Mobile | Android KeyStore Hardware Attestation (TEE / StrongBox) |
 | Documentação | drf-spectacular (OpenAPI 3.0) |
 | Banco de Dados | PostgreSQL 16+ |
+| Cache & Anti-Replay | Redis 7 (`RedisCache`) |
 | Filtros | django-filter |
-| CORS | django-cors-headers |
 | Mídia & QR Code | Pillow + qrcode |
 | Arquivos Estáticos | WhiteNoise |
 | Containerização | Docker + Docker Compose |
@@ -649,12 +648,101 @@ docker-compose up --build -d
 > Ao rodar `docker-compose up`, o contêiner verifica as variáveis `ENABLE_MIGRATIONS=True` e `ENABLE_SEED=True` no seu `.env` e executa automaticamente:
 > - As migrações do banco de dados (`manage.py migrate`);
 > - A criação da conta superusuário inicial (`admin` / `admin`);
-> - A população de cargos (Groups) e permissões via `seed_dev`;
-> - A sincronização dos placeholders de mídia para o volume persistente (`/media`).
+> - A população de cargos (Groups) e permissões via `seed_dev`.
 
 API disponível em: `http://localhost:8000/`  
 Swagger UI: `http://localhost:8000/api/docs/`  
 Django Admin: `http://localhost:8000/admin/`
+
+---
+
+## 🛡️ Medidas de Segurança da API (Django Nativo & VotaAí)
+
+Além da arquitetura criptográfica própria, a API se apoia nas proteções nativas do **Django 5.2**, do **Django REST Framework (DRF)** e de bibliotecas consolidadas do ecossistema Python/Django configuradas em `setup/settings.py`.
+
+### 1. Segurança Nativa do Django & DRF
+- **Prevenção contra SQL Injection (Django ORM)**: Todas as consultas em `Domain/` e `Controllers/` utilizam QuerySets e Models do Django ORM, que empregam *queries* parametrizadas por padrão, impedindo injeção de SQL.
+- **Proteção de Senhas e Validação Estrita (`AUTH_PASSWORD_VALIDATORS`)**: Armazenamento de credenciais com hash PBKDF2-SHA256 nativo do Django combinado aos validadores nativos (`UserAttributeSimilarityValidator`, `MinimumLengthValidator`, `CommonPasswordValidator`, `NumericPasswordValidator`) e ao validador customizado `PasswordValidator` (exigindo no mínimo 8 caracteres, letras maiúsculas, minúsculas, números e caracteres especiais).
+- **Validação e Sanitização de Entrada (DRF Serializers)**: Tipagem estrita, validação de schemas e rejeição automática de payloads inválidos ou malformados na camada `Api/` antes de atingir a regra de negócio.
+- **Rate Limiting / Throttling Global (`DEFAULT_THROTTLE_CLASSES`)**: Limitação global de requisições por minuto via `AnonRateThrottle` (`60/minute` padrão em produção) e `UserRateThrottle` (`120/minute` padrão em produção) configurável por variáveis de ambiente (`THROTTLE_RATE_ANON` e `THROTTLE_RATE_USER`).
+- **Autenticação Baseada em Tokens Criptografados (`django-rest-knox`) & Permissão Padrão (`IsAuthenticated`)**: Ao contrário do token simples do DRF, o Knox armazena apenas o hash criptográfico (SHA-512) do token no banco de dados e aplica expiração configurada (`TOKEN_TTL` de 10 horas com `AUTO_REFRESH=True`). Em `REST_FRAMEWORK`, `DEFAULT_PERMISSION_CLASSES` define `IsAuthenticated` como padrão global, exigindo autenticação salvo em rotas explicitamente públicas ou autenticadas via chave de hardware.
+- **Redução da Superfície de Ataque em Produção (`DEBUG=False`)**:
+  - **Segredos Obrigatórios via Ambiente**: `SECRET_KEY` e `QR_SIGNING_PRIVATE_KEY` não possuem mais valores *fallback hardcoded* no código-fonte, exigindo injeção explícita via `.env` / variáveis de ambiente.
+  - **Desativação de Admin, Documentação OpenAPI e Browsable API**: Em produção (`DEBUG=False`), `ENABLE_ADMIN` e `ENABLE_API_DOCS` assumem `False` por padrão (ocultando `/admin/`, `/api/schema/`, `/api/docs/` e `/api/redoc/`), e o DRF restringe os renderizadores apenas para `JSONRenderer` (removendo o `BrowsableAPIRenderer`).
+  - **Sem exposição de mídia**: O servidor não configura `MEDIA_URL`/`MEDIA_ROOT` nem serve arquivos de upload.
+- **Proteção contra CSRF (`CsrfViewMiddleware`), Clickjacking (`XFrameOptionsMiddleware`) e Hardening HTTP**:
+  - `X_FRAME_OPTIONS='DENY'`, `SECURE_CONTENT_TYPE_NOSNIFF=True`, `SECURE_REFERRER_POLICY='strict-origin-when-cross-origin'` e `SECURE_CROSS_ORIGIN_OPENER_POLICY='same-origin'` ativos globalmente.
+  - Cookies com `HttpOnly=True` e `SameSite='Lax'` para sessão e CSRF (`SESSION_COOKIE_HTTPONLY`, `CSRF_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE`, `CSRF_COOKIE_SAMESITE`).
+- **Validação do Cabeçalho Host (`ALLOWED_HOSTS`)**: Bloqueio de requisições com cabeçalho `Host` não autorizado, prevenindo ataques de *HTTP Host Header Poisoning*.
+- **Prevenção contra XSS (Auto-escaping de Templates)**: Escape automático de variáveis no motor de templates do Django nas páginas web renderizadas (`/votar/`), mitigando *Cross-Site Scripting*.
+- **Segurança de Transporte HTTPS, HSTS e Cookies Seguros (`SecurityMiddleware` / `USE_HTTPS`)**: Quando `USE_HTTPS=True`, habilita redirecionamento SSL (`SECURE_SSL_REDIRECT`), cookies exclusivos para HTTPS (`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`), suporte a proxy reverso TLS (`SECURE_PROXY_SSL_HEADER`) e **HSTS** (`SECURE_HSTS_SECONDS=31536000`, `SECURE_HSTS_INCLUDE_SUBDOMAINS=True`, `SECURE_HSTS_PRELOAD=True`).
+
+### 2. Camadas Adicionais de Segurança Implementadas no VotaAí
+- **Criptografia de Ponta a Ponta (E2EE) via `SEDecryptMiddleware` + TPM 2.0**: Todas as requisições de escrita para rotas protegidas (Desktop e Mobile) trafegam em envelope híbrido (**AES-256-GCM + RSA**) decifrado e assinado com apoio do hardware **TPM 2.0** do servidor, com respostas cifradas para a `machine_public_key` do cliente.
+- **Autenticação Multifator (2FA TOTP) + Machine Binding 1:1**: Login administrativo com senha, código TOTP (`pyotp`) e vinculação criptográfica estrita da conta do administrador ao `device_id` e à chave pública da máquina física.
+- **Atestação de Hardware Mobile & QR Codes Assinados (`votaai-qr:v2`)**: Verificação da cadeia X.509 do **Android KeyStore (TEE / StrongBox)** antes da entrega da cédula e assinatura assimétrica **ECDSA P-256** nos QR Codes de votação para impedir falsificações.
+- **Proteção Anti-Replay (Nonces), Anti-Força Bruta por IP e Anonimato do Voto**: Controle de *nonces* e bloqueios progressivos de tentativas inválidas via cache distribuído (**Redis 7** em Docker/produção via `REDIS_URL`, com fallback para `LocMemCache` em desenvolvimento/testes) e quebra matemática de correlação entre a identidade do eleitor e o registro do voto na urna.
+
+### 3. Referência das Variáveis de Configuração e Segurança (`settings.py` / `.env`)
+
+#### Núcleo Django, Exposição de Rotas e Throttling
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `SECRET_KEY` | **Obrigatória** (sem fallback) | Chave criptográfica usada pelo Django para assinatura de sessões, tokens CSRF e integridade interna. Deve ser única e secreta por ambiente. |
+| `DEBUG` | `False` | Ativa/desativa o modo de depuração. Em produção deve permanecer `False` para ocultar tracebacks, desativar o `BrowsableAPIRenderer` e desabilitar Admin/Docs por padrão. |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Lista (CSV) de domínios/IPs aceitos no cabeçalho `Host`, protegendo contra *HTTP Host Header Poisoning*. |
+| `ENABLE_ADMIN` | Valor de `DEBUG` | Controla se a rota `/admin/` é registrada em `setup/urls.py`. Em produção (`DEBUG=False`), fica desativada por padrão. |
+| `ENABLE_API_DOCS` | Valor de `DEBUG` | Controla o registro das rotas `/api/schema/`, `/api/docs/` (Swagger UI) e `/api/redoc/`. Em produção (`DEBUG=False`), fica desativada por padrão. |
+| `THROTTLE_RATE_ANON` | `60/minute` (`10000/minute` em testes) | Limite máximo de requisições permitidas por clientes não autenticados no DRF (`AnonRateThrottle`). |
+| `THROTTLE_RATE_USER` | `120/minute` (`10000/minute` em testes) | Limite máximo de requisições permitidas por usuários autenticados via Knox no DRF (`UserRateThrottle`). |
+| `API_TITLE` | `My API` | Título exibido na especificação OpenAPI 3.0 (`SPECTACULAR_SETTINGS`). |
+| `API_DESCRIPTION` | `API documentation.` | Descrição exibida na especificação OpenAPI 3.0 (`SPECTACULAR_SETTINGS`). |
+| `APP_NAME` | `My App` | Nome da aplicação utilizado na interface web do QR Code e nos e-mails enviados. |
+
+#### Hardening HTTP, Cookies e HTTPS
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `X_FRAME_OPTIONS` | `DENY` | Define o cabeçalho `X-Frame-Options`, impedindo que páginas do sistema sejam carregadas dentro de `<iframe>` (*Clickjacking*). |
+| `SECURE_CONTENT_TYPE_NOSNIFF` | `True` | Envia `X-Content-Type-Options: nosniff`, evitando que o navegador interprete arquivos com MIME type incorreto (*MIME sniffing*). |
+| `SECURE_REFERRER_POLICY` | `strict-origin-when-cross-origin` | Controla o envio do cabeçalho `Referer` em navegações/requisições (a página `/votar/` sobrescreve com `no-referrer` para proteger o token). |
+| `SECURE_CROSS_ORIGIN_OPENER_POLICY` | `same-origin` | Define `Cross-Origin-Opener-Policy` para isolar a janela do navegador contra ataques entre origens (COOP). |
+| `SESSION_COOKIE_HTTPONLY` | `True` | Impede acesso ao cookie de sessão via JavaScript (`document.cookie`), reduzindo impacto de XSS. |
+| `CSRF_COOKIE_HTTPONLY` | `True` | Marca o cookie CSRF como `HttpOnly`, bloqueando sua leitura por scripts no navegador. |
+| `SESSION_COOKIE_SAMESITE` | `Lax` | Política `SameSite` do cookie de sessão para mitigar envio indevido em requisições cross-site (CSRF). |
+| `CSRF_COOKIE_SAMESITE` | `Lax` | Política `SameSite` do cookie CSRF para restringir envio em requisições de terceiros. |
+| `USE_HTTPS` | `False` | Ativa o bloco de produção TLS: `SECURE_PROXY_SSL_HEADER`, `SESSION_COOKIE_SECURE=True`, `CSRF_COOKIE_SECURE=True`, redirecionamento SSL e HSTS. |
+| `SECURE_SSL_REDIRECT` | `True` (quando `USE_HTTPS=True`) | Redireciona automaticamente requisições HTTP para HTTPS no `SecurityMiddleware`. |
+| `SECURE_HSTS_SECONDS` | `31536000` (1 ano, se `USE_HTTPS=True`) | Tempo (em segundos) que navegadores devem exigir conexão exclusivamente via HTTPS (*HTTP Strict Transport Security*). |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `True` (quando `USE_HTTPS=True`) | Estende a política HSTS para todos os subdomínios do domínio principal. |
+| `SECURE_HSTS_PRELOAD` | `True` (quando `USE_HTTPS=True`) | Adiciona a diretiva `preload` ao cabeçalho HSTS para elegibilidade em listas de preload de navegadores. |
+
+#### Votação, Criptografia, E-mail e Auditoria
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `QR_SIGNING_PRIVATE_KEY` | **Obrigatória** (sem fallback) | Chave privada **ECDSA P-256** (PEM) usada para assinar os QR Codes de votação no formato `votaai-qr:v2`. |
+| `REQUIRE_HARDWARE_ATTESTATION` | `True` | Exige comprovação de chave protegida em hardware (**Android KeyStore TEE ou StrongBox**) em `/api/vote/request/`. |
+| `VOTING_TOKEN_MAX_FAILED_ATTEMPTS` | `3` | Quantidade máxima de falhas consecutivas na validação do token de votação antes do bloqueio do token. |
+| `WEB_VOTING_URL` | `http://localhost:8000/votar/?token=` | URL base da landing page web enviada aos eleitores para exibição do QR Code de votação. |
+| `MOBILE_VOTING_URL` | `votaai://votar/?token=` | Deep link base para abertura da cédula no aplicativo mobile VotaAí. |
+| `ELECTION_INFO_URL` | `http://localhost:5173/eleicoes` | URL pública informativa incluída nas comunicações de eleição para acompanhamento. |
+| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` | Backend de envio de e-mails do Django (ex.: SMTP em produção ou `filebased` / `console` em desenvolvimento). |
+| `EMAIL_FILE_PATH` | `BASE_DIR / 'sent_emails'` | Diretório onde os e-mails são gravados quando `EMAIL_BACKEND` usa `filebased.EmailBackend`. |
+| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` | `smtp.gmail.com` / `587` / `True` | Endereço, porta e uso de TLS do servidor SMTP para disparo dos tokens de votação. |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | `""` | Credenciais de autenticação no servidor SMTP. |
+| `DEFAULT_FROM_EMAIL` | `no-reply@myapp.com` | Endereço remetente padrão dos e-mails enviados pelo sistema. |
+| `LOG_LEVEL` | `INFO` | Nível mínimo de severidade (`DEBUG`, `INFO`, `WARNING`, `ERROR`) registrado no console e em `logs/audit.log`. |
+
+#### Automação Docker, Banco de Dados e Cache (`docker-compose.yml` / `entrypoint.sh` / `settings.py`)
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `CONTAINER_PREFIX` | `django` | Prefixo dos nomes dos containers (`<prefix>_db`, `<prefix>_redis` e `<prefix>_api`) no `docker-compose.yml`. |
+| `ENABLE_COLLECTSTATIC` | *(não definido)* | Quando `True`, executa `python manage.py collectstatic --noinput` ao iniciar o container. |
+| `ENABLE_MIGRATIONS` | *(não definido)* | Quando `True`, aplica `python manage.py migrate --noinput` na inicialização do container. |
+| `ENABLE_SEED` | *(não definido)* | Quando `True`, executa `python manage.py seedDev` para popular cargos e permissões iniciais. |
+| `DJANGO_SUPERUSER_USERNAME` / `_EMAIL` / `_PASSWORD` | *(não definido)* | Credenciais usadas pelo `entrypoint.sh` para criar um superusuário inicial automaticamente quando `ENABLE_MIGRATIONS=True`. |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | `""` / `postgres` / `postgres` / `db` / `5432` | Quando `DB_NAME` está definido (ex.: no Docker / `.env`), conecta o Django ao PostgreSQL 16; quando vazio, usa fallback local para SQLite (`db.sqlite3`). |
+| `REDIS_URL` | `""` | URL de conexão do Redis (ex.: `redis://redis:6379/1`) usada por `CACHES` (`RedisCache`) para compartilhar estado de anti-replay (nonces), bloqueios por IP e throttling entre workers. Quando vazio (ou durante testes), usa `LocMemCache`. |
+| `REDIS_PORT` | `6379` | Porta exposta no host para o serviço `redis` no `docker-compose.yml`. |
 
 ---
 
