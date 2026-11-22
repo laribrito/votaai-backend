@@ -2,10 +2,10 @@ from django.utils.translation import gettext as _
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from drf_spectacular.utils import extend_schema
 
+from Api.permissions import IsElectionAdministrator
 from Domain.models.schemas.election.electionSchema import Election
 from Controllers.actions.election.electionActions import ElectionActions
 from Api.serializers.election.tallyElectionSerializer import (
@@ -22,7 +22,7 @@ class TallyElectionVotesView(APIView):
     Enquanto a eleição estiver apenas encerrada (CLOSED), apenas o Desktop autenticado criador
     pode requisitar os votos para realizar a primeira apuração soberana.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Obter votos cifrados para apuração (Desktop)",
@@ -96,7 +96,7 @@ class TallyElectionView(APIView):
     Registra a primeira apuração oficial e salva a chave privada da eleição.
     Exige autenticação estrita da estação desktop criadora.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Salvar primeira apuração e registrar chave privada (Desktop)",

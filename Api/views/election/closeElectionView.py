@@ -2,10 +2,10 @@ from django.utils.translation import gettext as _
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from drf_spectacular.utils import extend_schema
 
+from Api.permissions import IsElectionAdministrator
 from Domain.models.schemas.election.electionSchema import Election
 from Controllers.actions.election.electionActions import ElectionActions
 from Api.serializers.election.closeElectionSerializer import (
@@ -19,7 +19,7 @@ class CloseElectionView(APIView):
     Encerra o período de votação de uma eleição ativa (STARTED), congelando o quórum.
     Exige verificação criptográfica da assinatura da eleição e autenticação da máquina física.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Fechar uma eleição (Desktop)",

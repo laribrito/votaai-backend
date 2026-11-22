@@ -121,11 +121,16 @@ class ElectionActions:
                 "signature": _("Physical machine signature is invalid or payload does not match.")
             })
 
-        # Creator is the user bound to this machine public key
+        # Creator is the authenticated administrator bound to this machine public key
         norm_machine_pub_key = SECryptoService.to_pem_public_key(machine_pub_key)
-        creator_user = User.objects.filter(machine_public_key=norm_machine_pub_key).first()
-        if not creator_user:
-            creator_user = User.objects.filter(machine_public_key=machine_pub_key).first()
+        if not user or not getattr(user, 'is_authenticated', False):
+            raise PermissionDenied(_("Authenticated administrator is required to create an election."))
+        if not getattr(user, 'machine_public_key', None):
+            raise PermissionDenied(_("Authenticated user is not bound to a physical machine."))
+        norm_user_machine_key = SECryptoService.to_pem_public_key(user.machine_public_key)
+        if norm_machine_pub_key.strip() != norm_user_machine_key.strip():
+            raise PermissionDenied(_("The machine public key does not match the authenticated administrator's registered machine."))
+        creator_user = user
 
         # Normalize public key to PEM format for cross-platform interoperability
         normalized_public_key = SECryptoService.to_pem_public_key(public_key)
@@ -133,11 +138,6 @@ class ElectionActions:
 
         # 4. Atomic creation in normalized relational tables
         with transaction.atomic():
-            if not creator_user:
-                raise ValidationError({
-                    "creator": _("Could not identify the authenticated user or physical machine owner to create the election.")
-                })
-
             if Election.objects.filter(key_handle=key_handle).exists():
                 raise ValidationError({
                     "key_handle": _("An election with this keyHandle already exists.")
@@ -449,13 +449,14 @@ class ElectionActions:
         # 3. Valida a permissão da máquina / administrador criador
         norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
         creator = election.created_by
-        if creator:
-            if user and user.id != creator.id:
-                raise PermissionDenied(_("Only the administrator that created this election can close it."))
-            if norm_machine_key and creator.machine_public_key:
-                norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
-                if norm_machine_key.strip() != norm_creator_key.strip():
-                    raise PermissionDenied(_("Only the physical machine that created this election can close it."))
+        if not user or not getattr(user, 'is_authenticated', False):
+            raise PermissionDenied(_("Authenticated administrator is required to close this election."))
+        if creator and user.id != creator.id:
+            raise PermissionDenied(_("Only the administrator that created this election can close it."))
+        if creator and creator.machine_public_key:
+            norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+            if not norm_machine_key or norm_machine_key.strip() != norm_creator_key.strip():
+                raise PermissionDenied(_("Only the physical machine that created this election can close it."))
 
         # 4. Valida a assinatura digital específica da eleição (usando a public_key da eleição)
         payload_to_verify = dict(data)
@@ -559,13 +560,14 @@ class ElectionActions:
         if election.status == ElectionStatus.CLOSED:
             norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
             creator = election.created_by
-            if creator:
-                if user and user.id != creator.id:
-                    raise PermissionDenied(_("Only the administrator that created this election can retrieve votes for tallying."))
-                if norm_machine_key and creator.machine_public_key:
-                    norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
-                    if norm_machine_key.strip() != norm_creator_key.strip():
-                        raise PermissionDenied(_("Only the physical machine that created this election can retrieve votes for tallying."))
+            if not user or not getattr(user, 'is_authenticated', False):
+                raise PermissionDenied(_("Authenticated administrator is required to retrieve votes for tallying."))
+            if creator and user.id != creator.id:
+                raise PermissionDenied(_("Only the administrator that created this election can retrieve votes for tallying."))
+            if creator and creator.machine_public_key:
+                norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+                if not norm_machine_key or norm_machine_key.strip() != norm_creator_key.strip():
+                    raise PermissionDenied(_("Only the physical machine that created this election can retrieve votes for tallying."))
 
         # 4. Busca os votos da urna ordenados por identificador anônimo aleatório
         votes_qs = election.votes.all().order_by('id_generated')
@@ -677,13 +679,14 @@ class ElectionActions:
         # 3. Validação estrita do Desktop Autenticado (Apenas máquina criadora autorizada)
         norm_machine_key = SECryptoService.to_pem_public_key(machine_public_key) if machine_public_key else None
         creator = election.created_by
-        if creator:
-            if user and user.id != creator.id:
-                raise PermissionDenied(_("Only the administrator that created this election can tally it."))
-            if norm_machine_key and creator.machine_public_key:
-                norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
-                if norm_machine_key.strip() != norm_creator_key.strip():
-                    raise PermissionDenied(_("Only the authenticated physical machine that created this election can tally it."))
+        if not user or not getattr(user, 'is_authenticated', False):
+            raise PermissionDenied(_("Authenticated administrator is required to tally this election."))
+        if creator and user.id != creator.id:
+            raise PermissionDenied(_("Only the administrator that created this election can tally it."))
+        if creator and creator.machine_public_key:
+            norm_creator_key = SECryptoService.to_pem_public_key(creator.machine_public_key)
+            if not norm_machine_key or norm_machine_key.strip() != norm_creator_key.strip():
+                raise PermissionDenied(_("Only the authenticated physical machine that created this election can tally it."))
 
         # 4. Validação criptográfica da Chave Privada da Eleição
         try:

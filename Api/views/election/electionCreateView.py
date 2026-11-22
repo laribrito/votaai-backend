@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
 from drf_spectacular.utils import extend_schema
 
+from Api.permissions import IsElectionAdministrator
 from Api.serializers.election.electionCreateSerializer import (
     ElectionCreateSerializer,
     ElectionCreateResponseSerializer
@@ -19,7 +19,7 @@ class ElectionCreateView(APIView):
     2. Registra a chave pública da máquina física cliente.
     3. Criptografa a resposta com a chave pública da máquina física.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Cadastrar nova eleição (Desktop)",

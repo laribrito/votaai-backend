@@ -5,8 +5,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema
-from rest_framework.permissions import AllowAny
 
+from Api.permissions import IsElectionAdministrator
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Infrastructure.services.seCryptoService import SECryptoService
 from Infrastructure.services.votingTokenService import VotingTokenService
@@ -16,7 +16,7 @@ class StartElectionView(APIView):
     Inicia uma eleição após verificar a assinatura digital da máquina e a assinatura da eleição.
     Ao iniciar, gera um token de votação único (single-use) por eleitor e envia por e-mail.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Iniciar uma eleição (Desktop)",
@@ -40,6 +40,24 @@ class StartElectionView(APIView):
             election = Election.objects.filter(key_handle=key_handle, status=ElectionStatus.CREATED).order_by('-created_at').first()
             if not election:
                 raise Election.DoesNotExist()
+
+            # 1.5 Valida que o administrador autenticado e a máquina física correspondem ao criador
+            user = request.user
+            if election.created_by_id != user.id:
+                return Response({
+                    "nonceClient2": nonce_client,
+                    "error": _("Only the administrator that created this election can start it.")
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            machine_key = getattr(request, '_machine_public_key', None) or payload.get('machine_public_key')
+            if election.created_by and election.created_by.machine_public_key:
+                norm_req_key = SECryptoService.to_pem_public_key(machine_key) if machine_key else ""
+                norm_creator_key = SECryptoService.to_pem_public_key(election.created_by.machine_public_key)
+                if not norm_req_key or norm_req_key.strip() != norm_creator_key.strip():
+                    return Response({
+                        "nonceClient2": nonce_client,
+                        "error": _("Only the physical machine that created this election can start it.")
+                    }, status=status.HTTP_403_FORBIDDEN)
 
             # 2. Valida a assinatura específica da eleição usando sua chave pública
             payload_to_verify = dict(payload)

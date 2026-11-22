@@ -4,9 +4,9 @@ from django.utils.translation import gettext as _
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
 from drf_spectacular.utils import extend_schema
 
+from Api.permissions import IsElectionAdministrator
 from Domain.models.schemas.election.electionSchema import Election, ElectionStatus
 from Domain.models.schemas.moderation.userSchema import User
 from Infrastructure.services.seCryptoService import SECryptoService
@@ -16,7 +16,7 @@ class AvailableElectionsView(APIView):
     """
     Retorna as eleições com status CREATED prontas para serem iniciadas pela máquina física.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsElectionAdministrator]
 
     @extend_schema(
         summary="Listar eleições disponíveis para iniciar (Desktop)",
@@ -28,22 +28,23 @@ class AvailableElectionsView(APIView):
         nonce_client = decrypted_payload.get("nonceClient1")
 
         try:
-            # 1. Identifica o usuário vinculado a esta máquina física
-            user = request.user if (request.user and request.user.is_authenticated) else None
-            if not user:
-                machine_key = getattr(request, '_machine_public_key', None)
-                if machine_key:
-                    norm_key = SECryptoService.to_pem_public_key(machine_key)
-                    user = User.objects.filter(machine_public_key=norm_key).first()
-                    if not user:
-                        user = User.objects.filter(machine_public_key=str(machine_key).strip()).first()
-
-            # Retorna vazio se não houver usuário vinculado a esta máquina
-            if not user:
+            # 1. Identifica o administrador autenticado e valida o vínculo com a máquina física
+            user = request.user
+            machine_key = getattr(request, '_machine_public_key', None) or decrypted_payload.get('machine_public_key')
+            if not machine_key:
                 return Response({
                     "nonceClient1": nonce_client,
-                    "elections": []
-                }, status=status.HTTP_200_OK)
+                    "error": _("Machine public key is required.")
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if user.machine_public_key:
+                norm_req_key = SECryptoService.to_pem_public_key(machine_key)
+                norm_user_key = SECryptoService.to_pem_public_key(user.machine_public_key)
+                if norm_req_key.strip() != norm_user_key.strip():
+                    return Response({
+                        "nonceClient1": nonce_client,
+                        "error": _("This physical machine is not linked to the authenticated administrator.")
+                    }, status=status.HTTP_403_FORBIDDEN)
 
             # 2. Busca eleições daquela máquina/pessoa (status configurável, default CREATED)
             target_status = decrypted_payload.get("status") or ElectionStatus.CREATED
