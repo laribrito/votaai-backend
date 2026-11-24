@@ -2,6 +2,7 @@ import subprocess
 import sys
 import os
 import json
+import shlex
 
 # Garante que o GitHub CLI (gh) esteja no PATH caso esteja instalado nos locais padrao
 GH_PATHS = [
@@ -41,7 +42,8 @@ def get_cz_command():
 def run_command(command, description):
     safe_print(f"\n[>] Executando: {description}...")
     try:
-        result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+        argv = shlex.split(command, posix=(sys.platform != "win32"))
+        result = subprocess.run(argv, check=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
         if result.stdout:
             safe_print(result.stdout.strip())
         safe_print(f"[+] Sucesso: {description}")
@@ -75,7 +77,7 @@ def cleanup_git():
     # CUIDADO PARA NÃO USAR NA BRANCH ERRADA
 
     try:
-        branch = subprocess.run("git branch --show-current", shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace").stdout.strip()
+        branch = subprocess.run(["git", "branch", "--show-current"], text=True, capture_output=True, encoding='utf-8', errors="replace").stdout.strip()
     except Exception:
         branch = None
         
@@ -106,7 +108,7 @@ def fetch_pr_comments(pr_target=None, save_to_file=False):
 
     safe_print("[>] Buscando detalhes e comentários gerais com o GitHub CLI...")
     cmd_view = f"gh pr view {target_arg} --comments"
-    res_view = subprocess.run(cmd_view, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+    res_view = subprocess.run(shlex.split(cmd_view), text=True, capture_output=True, encoding='utf-8', errors="replace")
 
     if res_view.returncode != 0:
         safe_print("[-] Não foi possível obter os dados do PR via GitHub CLI.")
@@ -117,7 +119,7 @@ def fetch_pr_comments(pr_target=None, save_to_file=False):
 
     # Tenta obter comentários de revisão inline (code review por linha de código)
     cmd_info = f"gh pr view {target_arg} --json number,title,url"
-    res_info = subprocess.run(cmd_info, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+    res_info = subprocess.run(shlex.split(cmd_info), text=True, capture_output=True, encoding='utf-8', errors="replace")
     
     review_comments_section = ""
     pr_title = ""
@@ -132,7 +134,7 @@ def fetch_pr_comments(pr_target=None, save_to_file=False):
 
             if pr_num:
                 cmd_reviews = f"gh api repos/:owner/:repo/pulls/{pr_num}/comments"
-                res_reviews = subprocess.run(cmd_reviews, shell=True, text=True, capture_output=True, encoding='utf-8', errors="replace")
+                res_reviews = subprocess.run(shlex.split(cmd_reviews), text=True, capture_output=True, encoding='utf-8', errors="replace")
                 if res_reviews.returncode == 0 and res_reviews.stdout.strip():
                     reviews = json.loads(res_reviews.stdout)
                     if reviews:
