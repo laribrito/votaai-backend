@@ -33,6 +33,9 @@ class AndroidAttestationService:
 
     # Fingerprints SHA-256 das chaves públicas do Google Attestation Root CA
     GOOGLE_HARDWARE_ROOT_PUBKEY_SHA256 = "bbaeb3041511110a3f9d99ff74a14c19def43e3d9e383236f6d81081a75d564f"
+    GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256 = {
+        GOOGLE_HARDWARE_ROOT_PUBKEY_SHA256,
+    }
     GOOGLE_SOFTWARE_ROOT_PUBKEY_SHA256 = "865a7d2b23cb6025bc43ad5d09e53008976bcf608cbb94b79a0cf5b2c2c0352d"
 
     @classmethod
@@ -141,12 +144,51 @@ class AndroidAttestationService:
         return certs
 
     @classmethod
-    def verify_cert_chain(cls, certs: List[x509.Certificate]) -> bool:
+    def get_trusted_hardware_root_pubkeys(cls) -> set[str]:
+        """
+        Retorna o conjunto de fingerprints SHA-256 das CAs raiz de hardware confiáveis,
+        combinando o baseline oficial da Google com eventuais chaves extras configuradas em settings.
+        """
+        roots = {fp.strip().lower() for fp in cls.GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256 if fp.strip()}
+        extra = getattr(settings, 'GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256', None) or []
+        if isinstance(extra, str):
+            extra = [item.strip() for item in extra.split(',') if item.strip()]
+        for fp in extra:
+            clean = str(fp).strip().lower()
+            if clean:
+                roots.add(clean)
+        return roots
+
+    @classmethod
+    def _public_key_sha256(cls, pub_key) -> str:
+        der = pub_key.public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        return hashlib.sha256(der).hexdigest().lower()
+
+    @classmethod
+    def verify_cert_chain(cls, certs: List[x509.Certificate], require_trusted_root: bool = False) -> bool:
         """
         Verifica a cadeia de assinaturas dos certificados (Leaf -> Intermediate -> Root).
+        Quando `require_trusted_root=True` (produção), exige cadeia com pelo menos 2 certificados,
+        validade temporal vigente e ancoragem criptográfica na raiz de hardware do Google.
         """
+        if not certs:
+            return False
+
+        if require_trusted_root and len(certs) < 2:
+            return False
+
         if len(certs) < 2:
             return True
+
+        if require_trusted_root:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            for cert in certs:
+                if now < cert.not_valid_before_utc or now > cert.not_valid_after_utc:
+                    return False
 
         for i in range(len(certs) - 1):
             child = certs[i]
@@ -173,6 +215,11 @@ class AndroidAttestationService:
                 else:
                     return False
             except InvalidSignature:
+                return False
+
+        if require_trusted_root:
+            root_fp = cls._public_key_sha256(certs[-1].public_key())
+            if root_fp not in cls.get_trusted_hardware_root_pubkeys():
                 return False
 
         return True
@@ -304,8 +351,12 @@ class AndroidAttestationService:
                     "error": "A chave pública do certificado de atestação não coincide com a machine_public_key declarada."
                 }
 
-            # 5. Valida a cadeia de certificados
-            chain_valid = cls.verify_cert_chain(chain)
+            # 5. Valida a cadeia de certificados (em produção exige ancoragem estrita na raiz de hardware do Google)
+            require_trusted_root = bool(
+                getattr(settings, 'REQUIRE_HARDWARE_ATTESTATION', True)
+                and not getattr(settings, 'IS_TESTING', False)
+            )
+            chain_valid = cls.verify_cert_chain(chain, require_trusted_root=require_trusted_root)
             if not chain_valid:
                 return {
                     "is_hardware_backed": False,
@@ -313,7 +364,7 @@ class AndroidAttestationService:
                     "security_level": parsed_ext.get("attestation_security_level"),
                     "method": "android_key_attestation",
                     "verified": False,
-                    "error": "Assinatura da cadeia de certificados X.509 de atestação é inválida."
+                    "error": "Assinatura ou âncora raiz da cadeia de certificados X.509 de atestação é inválida."
                 }
 
             # 6. Valida desafio se especificado

@@ -275,6 +275,14 @@ VOTING_TOKEN_MAX_FAILED_ATTEMPTS = config('VOTING_TOKEN_MAX_FAILED_ATTEMPTS', de
 # Em produção deve ser True. Pode ser False em desenvolvimento/testes locais.
 REQUIRE_HARDWARE_ATTESTATION = config('REQUIRE_HARDWARE_ATTESTATION', default=True, cast=bool)
 
+# Fingerprints SHA-256 adicionais (separados por vírgula) de CAs raiz de hardware do Google
+# para rotação/novas gerações de Android Key Attestation sem necessidade de redeploy de código.
+GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256 = [
+    fp.strip().lower()
+    for fp in config('GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256', default='').split(',')
+    if fp.strip()
+]
+
 # ==============================================================================
 # AUDITORIA E LOGGING DO SISTEMA
 # ==============================================================================

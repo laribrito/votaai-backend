@@ -5,6 +5,7 @@ import struct
 import datetime
 from pathlib import Path
 from django.conf import settings
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -607,4 +608,114 @@ class VoteRequestViewTests(APITestCase):
         self.assertEqual(labels.count("Branco"), 1)
         self.assertEqual(labels.count("Nulo"), 1)
         self.assertEqual(len(options), 4)
+
+    def _generate_two_cert_chain(self, security_level: int, challenge: str) -> tuple[list[str], str]:
+        from Infrastructure.services.androidAttestationService import AndroidAttestationService
+
+        root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        root_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Test Hardware Root CA')])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        root_cert = (
+            x509.CertificateBuilder()
+            .subject_name(root_name)
+            .issuer_name(root_name)
+            .public_key(root_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(minutes=1))
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .sign(root_key, hashes.SHA256())
+        )
+
+        ch_bytes = challenge.encode('utf-8')
+        inner_asn1 = (
+            b'\x02\x01\x03' +
+            bytes([0x0a, 0x01, security_level]) +
+            b'\x02\x01\x04' +
+            bytes([0x0a, 0x01, security_level]) +
+            b'\x04' + bytes([len(ch_bytes)]) + ch_bytes
+        )
+        ext_value = b'\x30' + bytes([len(inner_asn1)]) + inner_asn1
+        leaf_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Test Device Leaf')])
+        leaf_cert = (
+            x509.CertificateBuilder()
+            .subject_name(leaf_name)
+            .issuer_name(root_name)
+            .public_key(self.device_private_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(minutes=1))
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(
+                x509.UnrecognizedExtension(
+                    x509.ObjectIdentifier(AndroidAttestationService.ANDROID_KEY_ATTESTATION_OID),
+                    ext_value,
+                ),
+                critical=False,
+            )
+            .sign(root_key, hashes.SHA256())
+        )
+
+        chain_pem = [
+            leaf_cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
+            root_cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
+        ]
+        root_fp = AndroidAttestationService._public_key_sha256(root_key.public_key())
+        return chain_pem, root_fp
+
+    @override_settings(IS_TESTING=False, REQUIRE_HARDWARE_ATTESTATION=True)
+    def test_production_rejects_single_self_signed_attestation_cert(self):
+        from Infrastructure.services.androidAttestationService import AndroidAttestationService
+        nonce = "nonce-prod-single-cert"
+        single_cert = self._generate_mock_attestation_cert(security_level=2, challenge=nonce)
+        res = AndroidAttestationService.validate_hardware_key(
+            self.device_public_pem,
+            [single_cert],
+            expected_challenge=nonce,
+        )
+        self.assertFalse(res["verified"])
+        self.assertFalse(res["is_hardware_backed"])
+
+    @override_settings(IS_TESTING=False, REQUIRE_HARDWARE_ATTESTATION=True)
+    def test_production_rejects_untrusted_root_ca_chain(self):
+        from Infrastructure.services.androidAttestationService import AndroidAttestationService
+        nonce = "nonce-prod-untrusted-root"
+        chain_pem, _ = self._generate_two_cert_chain(security_level=2, challenge=nonce)
+        res = AndroidAttestationService.validate_hardware_key(
+            self.device_public_pem,
+            chain_pem,
+            expected_challenge=nonce,
+        )
+        self.assertFalse(res["verified"])
+
+    @override_settings(IS_TESTING=False, REQUIRE_HARDWARE_ATTESTATION=True)
+    def test_production_accepts_trusted_root_ca_chain(self):
+        from unittest.mock import patch
+        from Infrastructure.services.androidAttestationService import AndroidAttestationService
+        nonce = "nonce-prod-trusted-root"
+        chain_pem, root_fp = self._generate_two_cert_chain(security_level=2, challenge=nonce)
+        with patch.object(AndroidAttestationService, 'GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256', {root_fp}):
+            res = AndroidAttestationService.validate_hardware_key(
+                self.device_public_pem,
+                chain_pem,
+                expected_challenge=nonce,
+            )
+        self.assertTrue(res["verified"])
+        self.assertTrue(res["is_hardware_backed"])
+        self.assertTrue(res["is_strongbox"])
+
+    def test_production_accepts_extra_root_ca_configured_in_settings(self):
+        from Infrastructure.services.androidAttestationService import AndroidAttestationService
+        nonce = "nonce-prod-settings-root"
+        chain_pem, root_fp = self._generate_two_cert_chain(security_level=2, challenge=nonce)
+        with override_settings(
+            IS_TESTING=False,
+            REQUIRE_HARDWARE_ATTESTATION=True,
+            GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256=[root_fp],
+        ):
+            res = AndroidAttestationService.validate_hardware_key(
+                self.device_public_pem,
+                chain_pem,
+                expected_challenge=nonce,
+            )
+        self.assertTrue(res["verified"])
+        self.assertTrue(res["is_hardware_backed"])
 
