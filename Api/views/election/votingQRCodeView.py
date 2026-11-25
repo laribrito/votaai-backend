@@ -17,7 +17,7 @@ class VotingQRCodeView(View):
     Security & Validation design:
     - Server-side validation via Django template when ?token= is provided.
     - Ephemeral client-side validation endpoint when #token= is provided via URL hash.
-    - Encrypts QR code with AES-256-GCM symmetric key so only VotaAí mobile app can read.
+    - Encrypts QR code with AES-256-GCM symmetric key so only Vota-i 2.0 mobile app can read.
     - Anti-cache headers enforce that browsers, proxies, and intermediaries never cache the page.
     """
 
@@ -52,7 +52,7 @@ class VotingQRCodeView(View):
             return JsonResponse({'status': 'valid', 'is_used': False, 'secure_qr_code': secure_qr_code})
 
         # 2. Renderização do Template Django (Validação no Servidor)
-        app_name = getattr(settings, 'APP_NAME', 'Vota-ai')
+        app_name = getattr(settings, 'APP_NAME', 'Vota-i 2.0')
         mobile_url = getattr(settings, 'MOBILE_VOTING_URL', 'votaai://votar/?token=')
 
         raw_token = (token or request.GET.get('token', '')).strip()

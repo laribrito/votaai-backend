@@ -485,7 +485,7 @@ class SECryptoService:
     def verify_payload_signature(cls, public_key, payload_dict: dict) -> bool:
         """
         Verifica a assinatura RSA-PSS embutida no payload descriptografado.
-        Segue estritamente o padrão do VotaAI Desktop:
+        Segue estritamente o padrão do Vota-i 2.0 Desktop:
         O Desktop serializa o dicionário canônico (sem o campo 'signature', com chaves ordenadas
         e sem espaços) em UTF-8, assina com a chave privada de hardware via RSA-PSS
         e injeta o resultado em Base64 no campo 'signature'.

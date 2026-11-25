@@ -137,7 +137,7 @@ class VotingTokenService:
         mobile_voting_link = cls.build_voting_link(raw_token)
         web_voting_link = cls.build_web_voting_link(raw_token)
         election_info_url = getattr(settings, 'ELECTION_INFO_URL', 'http://localhost:5173/eleicoes').strip()
-        app_name = getattr(settings, 'APP_NAME', 'VotaAI')
+        app_name = getattr(settings, 'APP_NAME', 'Vota-i 2.0')
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@votaai.com')
 
         # Obtém o nome da pessoa para o e-mail (nome completo, apelido ou primeiro nome)

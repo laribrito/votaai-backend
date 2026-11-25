@@ -58,10 +58,10 @@ class AdminPreRegistrationActions:
             'email_verification_attempts',
         ])
 
-        subject = str(_("VotaAI - Verificação de e-mail do gestor da máquina"))
+        subject = str(_("Vota-i 2.0 - Verificação de e-mail do gestor da máquina"))
         html_message = f"""
             <p>Olá,</p>
-            <p>Você iniciou o cadastro como gestor de máquina (administrador) no <strong>VotaAí</strong>.</p>
+            <p>Você iniciou o cadastro como gestor de máquina (administrador) no <strong>Vota-i 2.0</strong>.</p>
             <p>Use o código abaixo para verificar seu endereço de e-mail e prosseguir com a configuração do autenticador (TOTP):</p>
             <div style="margin: 24px 0; text-align: center;">
                 <span style="display: inline-block; padding: 14px 28px; font-size: 28px; font-weight: 800; letter-spacing: 6px; background-color: #F4F4F5; border: 1px solid #D4D4D8; border-radius: 10px; color: #111111;">

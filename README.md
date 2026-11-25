@@ -1,6 +1,6 @@
-# VotaAí Backend API
+# Vota-i 2.0 Backend API
 
-API robusta e segura para o ecossistema de votação eletrônica **VotaAí**, construída com **Python 3.12+** e **Django 5.2**, seguindo os princípios de **Domain-Driven Design (DDD)** e **Clean Architecture**.
+API robusta e segura para o ecossistema de votação eletrônica **Vota-i 2.0**, construída com **Python 3.12+** e **Django 5.2**, seguindo os princípios de **Domain-Driven Design (DDD)** e **Clean Architecture**.
 
 O sistema implementa criptografia de ponta a ponta (E2EE), integração com módulos de segurança em hardware (**TPM 2.0 / Secure Element** no servidor e **Android KeyStore / StrongBox** nos smartphones eleitores), garantia matemática de anonimato do voto (quebra de correlação com a identidade) e autenticação de administradores vinculada a máquinas físicas 1:1.
 
@@ -361,7 +361,7 @@ sequenceDiagram
 
 ### 9. Cédula Web e Landing Page QR Code (`GET /votar/`, `GET /votar/<token>/`)
 
-Landing page que renderiza o QR Code com cabeçalhos anti-cache estritos e criptografia simétrica AES-256-GCM para ser escaneado exclusivamente pelo aplicativo mobile VotaAí.
+Landing page que renderiza o QR Code com cabeçalhos anti-cache estritos e criptografia simétrica AES-256-GCM para ser escaneado exclusivamente pelo aplicativo mobile Vota-i 2.0.
 
 ```mermaid
 sequenceDiagram
@@ -370,7 +370,7 @@ sequenceDiagram
     participant QRView as VotingQRCodeView
     participant TokenService as VotingTokenService
     participant DB as Banco de Dados (VotingToken)
-    actor Mobile as App Mobile VotaAí
+    actor Mobile as App Mobile Vota-i 2.0
 
     Eleitor->>QRView: GET /votar/<token>/ (ou via fetch assíncrono ?check=1 / ?token_hash=...)
     alt Verificação Assíncrona via JSON (?check=1)
@@ -388,7 +388,7 @@ sequenceDiagram
             QRView-->>Eleitor: Renderiza página com QR Code dinâmico<br/>(com headers: no-store, no-cache, DENY, no-referrer)
         end
     end
-    Note over Eleitor,Mobile: Eleitor abre o app móvel VotaAí e lê o QR Code
+    Note over Eleitor,Mobile: Eleitor abre o app móvel Vota-i 2.0 e lê o QR Code
     Mobile->>Mobile: Decifra o payload do QR Code usando a chave simétrica do aplicativo
 ```
 
@@ -656,7 +656,7 @@ Django Admin: `http://localhost:8000/admin/`
 
 ---
 
-## 🛡️ Medidas de Segurança da API (Django Nativo & VotaAí)
+## 🛡️ Medidas de Segurança da API (Django Nativo & Vota-i 2.0)
 
 Além da arquitetura criptográfica própria, a API se apoia nas proteções nativas do **Django 5.2**, do **Django REST Framework (DRF)** e de bibliotecas consolidadas do ecossistema Python/Django configuradas em `setup/settings.py`.
 
@@ -677,7 +677,7 @@ Além da arquitetura criptográfica própria, a API se apoia nas proteções nat
 - **Prevenção contra XSS (Auto-escaping de Templates)**: Escape automático de variáveis no motor de templates do Django nas páginas web renderizadas (`/votar/`), mitigando *Cross-Site Scripting*.
 - **Segurança de Transporte HTTPS, HSTS e Cookies Seguros (`SecurityMiddleware` / `USE_HTTPS`)**: Quando `USE_HTTPS=True`, habilita redirecionamento SSL (`SECURE_SSL_REDIRECT`), cookies exclusivos para HTTPS (`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`), suporte a proxy reverso TLS (`SECURE_PROXY_SSL_HEADER`) e **HSTS** (`SECURE_HSTS_SECONDS=31536000`, `SECURE_HSTS_INCLUDE_SUBDOMAINS=True`, `SECURE_HSTS_PRELOAD=True`).
 
-### 2. Camadas Adicionais de Segurança Implementadas no VotaAí
+### 2. Camadas Adicionais de Segurança Implementadas no Vota-i 2.0
 - **Criptografia de Ponta a Ponta (E2EE) via `SEDecryptMiddleware` + TPM 2.0**: Todas as requisições de escrita para rotas protegidas (Desktop e Mobile) trafegam em envelope híbrido (**AES-256-GCM + RSA**) decifrado e assinado com apoio do hardware **TPM 2.0** do servidor, com respostas cifradas para a `machine_public_key` do cliente.
 - **Autenticação Multifator (2FA TOTP) + Machine Binding 1:1**: Login administrativo com senha, código TOTP (`pyotp`) e vinculação criptográfica estrita da conta do administrador ao `device_id` e à chave pública da máquina física.
 - **Atestação de Hardware Mobile & QR Codes Assinados (`votaai-qr:v2`)**: Verificação da cadeia X.509 do **Android KeyStore (TEE / StrongBox)** antes da entrega da cédula e assinatura assimétrica **ECDSA P-256** nos QR Codes de votação para impedir falsificações.
@@ -723,7 +723,7 @@ Além da arquitetura criptográfica própria, a API se apoia nas proteções nat
 | `REQUIRE_HARDWARE_ATTESTATION` | `True` | Exige comprovação de chave protegida em hardware (**Android KeyStore TEE ou StrongBox**) em `/api/vote/request/`. |
 | `VOTING_TOKEN_MAX_FAILED_ATTEMPTS` | `3` | Quantidade máxima de falhas consecutivas na validação do token de votação antes do bloqueio do token. |
 | `WEB_VOTING_URL` | `http://localhost:8000/votar/?token=` | URL base da landing page web enviada aos eleitores para exibição do QR Code de votação. |
-| `MOBILE_VOTING_URL` | `votaai://votar/?token=` | Deep link base para abertura da cédula no aplicativo mobile VotaAí. |
+| `MOBILE_VOTING_URL` | `votaai://votar/?token=` | Deep link base para abertura da cédula no aplicativo mobile Vota-i 2.0. |
 | `ELECTION_INFO_URL` | `http://localhost:5173/eleicoes` | URL pública informativa incluída nas comunicações de eleição para acompanhamento. |
 | `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` | Backend de envio de e-mails do Django (ex.: SMTP em produção ou `filebased` / `console` em desenvolvimento). |
 | `EMAIL_FILE_PATH` | `BASE_DIR / 'sent_emails'` | Diretório onde os e-mails são gravados quando `EMAIL_BACKEND` usa `filebased.EmailBackend`. |
@@ -795,4 +795,4 @@ As informações das chaves públicas geradas no hardware serão salvas no arqui
 
 ---
 
-Desenvolvido para o sistema de votação eletrônica segura **VotaAí** 🗳️
+Desenvolvido para o sistema de votação eletrônica segura **Vota-i 2.0** 🗳️

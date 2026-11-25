@@ -889,7 +889,7 @@ class ElectionActions:
             f"2. votos_criptografados.json: Lista contendo todas as cédulas cifradas originais.\n"
             f"3. dados_eleicao.json: Metadados, questões e resultado canônico da eleição.\n\n"
             f"COMO AUDITAR NO APLICATIVO DESKTOP:\n"
-            f"Importe este pacote no aplicativo desktop do Vota Aí na seção de Auditoria\n"
+            f"Importe este pacote no aplicativo desktop do Vota-i 2.0 na seção de Auditoria\n"
             f"para decifrar os votos, recalcular a apuração de forma soberana e conferir\n"
             f"a integridade matemática do pleito através do hash oficial.\n"
         )
