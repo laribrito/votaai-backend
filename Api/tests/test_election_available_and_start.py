@@ -147,7 +147,8 @@ class ElectionAvailableAndStartTests(APITestCase):
         ciphertext = base64.b64decode(enc_json["encrypted_payload"])
         tag = base64.b64decode(enc_json["tag"])
 
-        decrypted_bytes = aesgcm.decrypt(iv, ciphertext + tag, None)
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_bytes = SECryptoService.unpad_iso7816_4(aesgcm.decrypt(iv, ciphertext + tag, None))
         return json.loads(decrypted_bytes.decode('utf-8'))
 
     def test_fetch_available_elections_returns_matching_nonce_and_elections(self):

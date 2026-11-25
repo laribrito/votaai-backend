@@ -175,7 +175,8 @@ class ElectionCloseTests(APITestCase):
         ciphertext = base64.b64decode(enc_json["encrypted_payload"])
         tag = base64.b64decode(enc_json["tag"])
 
-        decrypted_bytes = aesgcm.decrypt(iv, ciphertext + tag, None)
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_bytes = SECryptoService.unpad_iso7816_4(aesgcm.decrypt(iv, ciphertext + tag, None))
         return json.loads(decrypted_bytes.decode('utf-8'))
 
     def test_close_election_flow_success(self):
@@ -274,11 +275,12 @@ class ElectionCloseTests(APITestCase):
         enc_aes_key_bytes = base64.b64decode(enc_json["encrypted_aes_key"])
         decrypted_aes_key = other_machine_priv.decrypt(enc_aes_key_bytes, padding.PKCS1v15())
         aesgcm = AESGCM(decrypted_aes_key)
-        decrypted_bytes = aesgcm.decrypt(
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_bytes = SECryptoService.unpad_iso7816_4(aesgcm.decrypt(
             base64.b64decode(enc_json["iv"]),
             base64.b64decode(enc_json["encrypted_payload"]) + base64.b64decode(enc_json["tag"]),
             None
-        )
+        ))
         data = json.loads(decrypted_bytes.decode('utf-8'))
         self.assertIn("error", data)
 

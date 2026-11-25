@@ -138,7 +138,10 @@ class VoteCastViewTests(APITestCase):
         )
 
         aesgcm = AESGCM(aes_key)
-        decrypted_bytes = aesgcm.decrypt(iv, encrypted_payload + tag, None)
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_bytes = SECryptoService.unpad_iso7816_4(
+            aesgcm.decrypt(iv, encrypted_payload + tag, None)
+        )
         return json.loads(decrypted_bytes.decode('utf-8'))
 
     def _generate_mock_attestation_cert(self, security_level: int, challenge: str = None, key=None) -> str:
@@ -535,11 +538,12 @@ class VoteCastViewTests(APITestCase):
         enc_json = response.json()
         enc_aes_key = second_device_key.decrypt(base64.b64decode(enc_json["encrypted_aes_key"]), padding.PKCS1v15())
         aesgcm = AESGCM(enc_aes_key)
-        decrypted = json.loads(aesgcm.decrypt(
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted = json.loads(SECryptoService.unpad_iso7816_4(aesgcm.decrypt(
             base64.b64decode(enc_json["iv"]),
             base64.b64decode(enc_json["encrypted_payload"]) + base64.b64decode(enc_json["tag"]),
             None
-        ).decode('utf-8'))
+        )).decode('utf-8'))
         self.assertEqual(decrypted["status"], "CONFIRMED")
         self.assertNotIn("receipt", decrypted)
         self.assertNotIn("id_voto", decrypted)

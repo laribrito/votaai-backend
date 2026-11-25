@@ -247,13 +247,13 @@ class SEDecryptMiddleware(MiddlewareMixin):
                     'error': f'Chave pública da máquina ({device_type}) não encontrada. Envie sua chave pública no campo "machine_public_key".'
                 }, status=400)
 
-            # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA
-            # e assina respostas Desktop no TPM de forma centralizada
-            sign_key_name = key_name if device_type == 'desktop' else None
+            # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA,
+            # aplica preenchimento ISO/IEC 7816-4 em blocos fixos e assina no TPM (Desktop/Mobile)
             encrypted_data = SECryptoService.encrypt_response_hybrid(
                 client_pub_key,
                 response.content,
-                sign_key_name=sign_key_name,
+                pad_block_size=SECryptoService.ENVELOPE_PAD_BLOCK_SIZE,
+                sign_key_name=key_name,
             )
             
             # Se havia um nonce no request, inclui também no envelope de resposta para clientes que validam o envelope externo

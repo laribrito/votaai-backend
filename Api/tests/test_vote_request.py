@@ -185,7 +185,16 @@ class VoteRequestViewTests(APITestCase):
         ciphertext = base64.b64decode(enc_json["encrypted_payload"])
         tag = base64.b64decode(enc_json["tag"])
 
-        decrypted_bytes = aesgcm.decrypt(iv, ciphertext + tag, None)
+        from Infrastructure.services.seCryptoService import SECryptoService
+        self.assertIn("server_signature", enc_json)
+        decrypted_bytes = SECryptoService.unpad_iso7816_4(aesgcm.decrypt(iv, ciphertext + tag, None))
+        self.assertTrue(
+            SECryptoService.verify_signature(
+                self.backend_public_key,
+                decrypted_bytes,
+                enc_json["server_signature"],
+            )
+        )
         return json.loads(decrypted_bytes.decode('utf-8'))
 
     def test_vote_request_success_with_strongbox_hardware(self):
@@ -303,11 +312,12 @@ class VoteRequestViewTests(APITestCase):
         enc_json_2 = res_2.json()
         enc_aes_key = other_key.decrypt(base64.b64decode(enc_json_2["encrypted_aes_key"]), padding.PKCS1v15())
         aesgcm = AESGCM(enc_aes_key)
-        data_2 = json.loads(aesgcm.decrypt(
+        from Infrastructure.services.seCryptoService import SECryptoService
+        data_2 = json.loads(SECryptoService.unpad_iso7816_4(aesgcm.decrypt(
             base64.b64decode(enc_json_2["iv"]),
             base64.b64decode(enc_json_2["encrypted_payload"]) + base64.b64decode(enc_json_2["tag"]),
             None
-        ).decode('utf-8'))
+        )).decode('utf-8'))
 
         id_voto_2 = data_2.get('id_voto')
         self.assertTrue(id_voto_2 and id_voto_2.startswith('VOTE-'))

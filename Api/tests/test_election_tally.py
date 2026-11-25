@@ -185,10 +185,13 @@ class ElectionTallyTests(APITestCase):
         )
 
         aesgcm = AESGCM(decrypted_aes_key)
-        decrypted_payload_bytes = aesgcm.decrypt(
-            base64.b64decode(enc_json["iv"]),
-            base64.b64decode(enc_json["encrypted_payload"]) + base64.b64decode(enc_json["tag"]),
-            None
+        from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_payload_bytes = SECryptoService.unpad_iso7816_4(
+            aesgcm.decrypt(
+                base64.b64decode(enc_json["iv"]),
+                base64.b64decode(enc_json["encrypted_payload"]) + base64.b64decode(enc_json["tag"]),
+                None
+            )
         )
         return json.loads(decrypted_payload_bytes.decode('utf-8'))
 

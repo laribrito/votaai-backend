@@ -155,6 +155,7 @@ class SEDecryptMiddlewareTests(APITestCase):
             None
         )
         from Infrastructure.services.seCryptoService import SECryptoService
+        decrypted_response_bytes = SECryptoService.unpad_iso7816_4(decrypted_response_bytes)
         self.assertTrue(
             SECryptoService.verify_signature(
                 self.backend_public_key,
