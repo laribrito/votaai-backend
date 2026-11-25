@@ -129,12 +129,13 @@ class SEDecryptMiddlewareTests(APITestCase):
         response = self.client.post(self.url, data=body, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # 6. Verifica se a resposta foi criptografada pelo backend
+        # 6. Verifica se a resposta foi criptografada e assinada pelo backend (TPM Desktop)
         encrypted_response_json = response.json()
         self.assertIn("encrypted_payload", encrypted_response_json)
         self.assertIn("encrypted_aes_key", encrypted_response_json)
         self.assertIn("iv", encrypted_response_json)
         self.assertIn("tag", encrypted_response_json)
+        self.assertIn("server_signature", encrypted_response_json)
 
         # 7. Desktop descriptografa a resposta usando sua Chave Privada
         encrypted_resp_aes_key_bytes = base64.b64decode(encrypted_response_json["encrypted_aes_key"])
@@ -152,6 +153,14 @@ class SEDecryptMiddlewareTests(APITestCase):
             resp_iv,
             resp_ciphertext + resp_tag,
             None
+        )
+        from Infrastructure.services.seCryptoService import SECryptoService
+        self.assertTrue(
+            SECryptoService.verify_signature(
+                self.backend_public_key,
+                decrypted_response_bytes,
+                encrypted_response_json["server_signature"],
+            )
         )
         decrypted_response_data = json.loads(decrypted_response_bytes.decode('utf-8'))
 

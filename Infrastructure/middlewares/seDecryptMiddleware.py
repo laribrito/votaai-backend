@@ -60,6 +60,14 @@ class SEDecryptMiddleware(MiddlewareMixin):
         '/api/vote/cast',          # 2. Envio da cédula preenchida (deposita o voto cifrado e emite comprovante)
     )
 
+    def _resolve_device(self, path: str) -> tuple[str | None, str | None]:
+        """Resolve (device_type, key_name) a partir do prefixo da rota."""
+        if path.startswith(self.DESKTOP_ROUTES):
+            return 'desktop', 'VotaAI_SecureKey_1'
+        if path.startswith(self.MOBILE_ROUTES):
+            return 'mobile', 'VotaAI_SecureKey_2'
+        return None, None
+
     def process_request(self, request):
         path = request.path
 
@@ -68,14 +76,7 @@ class SEDecryptMiddleware(MiddlewareMixin):
             return None
 
         # Determina qual dispositivo e chave usar com base na rota
-        key_name = None
-        device_type = None
-        if path.startswith(self.DESKTOP_ROUTES):
-            key_name = 'VotaAI_SecureKey_1'
-            device_type = 'desktop'
-        elif path.startswith(self.MOBILE_ROUTES):
-            key_name = 'VotaAI_SecureKey_2'
-            device_type = 'mobile'
+        device_type, key_name = self._resolve_device(path)
 
         # Todas as rotas da aplicação precisam pertencer a um dispositivo
         if not key_name or not device_type:
@@ -83,8 +84,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 'error': f'Rota {path} não mapeada para nenhum dispositivo (Desktop ou Mobile). Acesso restrito.'
             }, status=400)
 
-        # Marca no request o tipo de dispositivo para uso no process_response
+        # Marca no request o tipo de dispositivo e a chave para uso no process_response
         request._device_type = device_type
+        request._key_name = key_name
 
         # Apenas requisições que enviam dados (POST, PUT, PATCH) são criptografadas no body
         if request.method not in ['POST', 'PUT', 'PATCH']:
@@ -214,11 +216,9 @@ class SEDecryptMiddleware(MiddlewareMixin):
             return response
 
         device_type = getattr(request, '_device_type', None)
-        if not device_type:
-            if path.startswith(self.DESKTOP_ROUTES):
-                device_type = 'desktop'
-            elif path.startswith(self.MOBILE_ROUTES):
-                device_type = 'mobile'
+        key_name = getattr(request, '_key_name', None)
+        if not device_type or not key_name:
+            device_type, key_name = self._resolve_device(path)
 
         # Se não conseguir inferir o dispositivo para qualquer rota da API, retorna erro
         if not device_type:
@@ -248,7 +248,13 @@ class SEDecryptMiddleware(MiddlewareMixin):
                 }, status=400)
 
             # Criptografa o conteúdo da resposta com criptografia híbrida AES-GCM + RSA
-            encrypted_data = SECryptoService.encrypt_response_hybrid(client_pub_key, response.content)
+            # e assina respostas Desktop no TPM de forma centralizada
+            sign_key_name = key_name if device_type == 'desktop' else None
+            encrypted_data = SECryptoService.encrypt_response_hybrid(
+                client_pub_key,
+                response.content,
+                sign_key_name=sign_key_name,
+            )
             
             # Se havia um nonce no request, inclui também no envelope de resposta para clientes que validam o envelope externo
             nonce_val = getattr(request, '_nonce', None)

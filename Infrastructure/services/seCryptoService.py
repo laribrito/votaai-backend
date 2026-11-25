@@ -425,10 +425,17 @@ class SECryptoService:
         return serialization.load_der_public_key(key_bytes)
 
     @classmethod
-    def encrypt_response_hybrid(cls, public_key, data_bytes: bytes, pad_block_size: int | None = None) -> dict:
+    def encrypt_response_hybrid(
+        cls,
+        public_key,
+        data_bytes: bytes,
+        pad_block_size: int | None = None,
+        sign_key_name: str | None = None,
+    ) -> dict:
         """
         Criptografa bytes de resposta com AES-GCM (32 bytes)
         e cifra a chave AES com a chave pública RSA do cliente.
+        Quando sign_key_name é informado, assina data_bytes no TPM e inclui 'server_signature'.
         """
         aes_key = os.urandom(32)
         iv = os.urandom(12)
@@ -445,12 +452,15 @@ class SECryptoService:
             padding.PKCS1v15()
         )
 
-        return {
+        envelope = {
             "encrypted_payload": base64.b64encode(ciphertext).decode('utf-8'),
             "encrypted_aes_key": base64.b64encode(encrypted_aes_key).decode('utf-8'),
             "iv": base64.b64encode(iv).decode('utf-8'),
             "tag": base64.b64encode(tag).decode('utf-8')
         }
+        if sign_key_name:
+            envelope["server_signature"] = cls.sign_with_tpm(sign_key_name, data_bytes)
+        return envelope
 
     @classmethod
     def verify_signature(cls, public_key, data: bytes, signature_b64: str) -> bool:
