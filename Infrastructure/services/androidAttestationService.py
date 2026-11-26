@@ -35,6 +35,10 @@ class AndroidAttestationService:
     GOOGLE_HARDWARE_ROOT_PUBKEY_SHA256 = "bbaeb3041511110a3f9d99ff74a14c19def43e3d9e383236f6d81081a75d564f"
     GOOGLE_HARDWARE_ROOT_PUBKEYS_SHA256 = {
         GOOGLE_HARDWARE_ROOT_PUBKEY_SHA256,
+        # Raiz RSA legada (Google Hardware Attestation Root)
+        "feb2ea7551ee316ed4bb443c8293b884dbfdea40b603ee3e4f4a897e4580fbae",
+        # Nova raiz ECDSA P-384 'Key Attestation CA1' (Remote Key Provisioning)
+        "3ee44512a1af2beb39c889490c60ea3f82e43f5d5a5532f5ab9419f676cd07ec",
     }
     GOOGLE_SOFTWARE_ROOT_PUBKEY_SHA256 = "865a7d2b23cb6025bc43ad5d09e53008976bcf608cbb94b79a0cf5b2c2c0352d"
 
