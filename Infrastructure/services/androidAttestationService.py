@@ -224,6 +224,7 @@ class AndroidAttestationService:
         if require_trusted_root:
             root_fp = cls._public_key_sha256(certs[-1].public_key())
             if root_fp not in cls.get_trusted_hardware_root_pubkeys():
+                logger.warning(f"[ATTESTATION_ROOT_UNTRUSTED] Fingerprint SHA-256 da raiz recebida: {root_fp}")
                 return False
 
         return True
